@@ -237,3 +237,23 @@ h1.brand { font-size: 3rem; }
 .model-badge.ready { color: var(--ok); }
 .model-badge.loading { color: var(--in-progress); }
 .model-badge.error { color: var(--error); }
+
+/* Dialogs */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; padding: 1rem; z-index: 10; }
+.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: min(34rem, 100%); max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+.modal-head h2 { margin: 0; font-size: 1rem; text-transform: none; letter-spacing: 0; color: var(--text); }
+.modal-body { padding: 1rem; overflow-y: auto; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.modal-actions.start { justify-content: flex-start; flex-wrap: wrap; }
+.modal fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0 0 0.85rem; }
+.modal legend { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0 0.3rem; }
+.choice { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.22rem 0; }
+.choice input { margin: 0; flex: none; }
+.summary { background: var(--hover); border-radius: 8px; padding: 0.5rem 0.75rem; }
+.ok { color: var(--ok); }
+.modal .warn { background: none; padding: 0; color: var(--in-progress); }
+.dataset .toolbar { margin-top: 0; }
+.modal .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0; }
+.modal .fields label { gap: 0.3rem; }
+.modal .fields select { min-width: 0; width: 100%; }

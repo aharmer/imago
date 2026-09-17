@@ -93,6 +93,8 @@ interface State {
   updateClass(id: string, patch: Partial<Pick<ClassDef, 'name' | 'color'>>): void;
   deleteClass(id: string): void;
 
+  /** Write imported annotations into the project, adding any classes they need. */
+  applyImport(docs: ImageDoc[], newClasses: ClassDef[]): Promise<void>;
   flushSaves(): Promise<void>;
 }
 
@@ -410,6 +412,21 @@ export const useStore = create<State>()((set, get) => {
       if (doc && doc.annotations.some((a) => a.classId === id)) {
         commitAnnotations(doc.annotations.map((a) => (a.classId === id ? { ...a, classId: null } : a)), { record: false });
       }
+    },
+
+    async applyImport(docs, newClasses) {
+      const { project, currentName } = get();
+      const images = { ...project.images };
+      for (const doc of docs) {
+        docCache.set(doc.image.name, doc);
+        dirtyDocs.add(doc.image.name);
+        images[doc.image.name] = { status: doc.status, annotations: doc.annotations.length, updatedAt: doc.updatedAt };
+      }
+      markProjectDirty({ ...project, classes: [...project.classes, ...newClasses], images });
+      if (!get().activeClassId) set({ activeClassId: get().project.classes[0]?.id ?? null });
+      const current = docs.find((d) => d.image.name === currentName);
+      if (current) set({ doc: current, past: [], future: [], selectedId: null });
+      await get().flushSaves();
     },
 
     flushSaves() {

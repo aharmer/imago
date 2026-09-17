@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store';
+import { ExportDialog } from './ExportDialog';
+import { ImportDialog } from './ImportDialog';
 import type { ClassDef } from '../project/types';
 
 function ClassRow({ cls, index, count }: { cls: ClassDef; index: number; count: number }) {
@@ -74,6 +76,7 @@ export function SidePanel() {
   const doc = useStore((s) => s.doc);
   const selectedId = useStore((s) => s.selectedId);
   const [newName, setNewName] = useState('');
+  const [dialog, setDialog] = useState<'export' | 'import' | null>(null);
   const { addClass, select, setTool, setAnnotationClass, deleteAnnotation } = useStore.getState();
 
   const counts = new Map<string, number>();
@@ -148,6 +151,19 @@ export function SidePanel() {
           })}
         </ul>
       </section>
+      <section className="dataset">
+        <h2>Dataset</h2>
+        <div className="toolbar">
+          <button className="primary" onClick={() => setDialog('export')}>
+            Export…
+          </button>
+          <button onClick={() => setDialog('import')}>Import…</button>
+        </div>
+        <p className="muted small">Export for training (YOLO, COCO, Pascal VOC, CSV), or import annotations made elsewhere.</p>
+      </section>
+
+      {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
+      {dialog === 'import' && <ImportDialog onClose={() => setDialog(null)} />}
     </aside>
   );
 }

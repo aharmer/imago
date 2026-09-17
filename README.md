@@ -6,7 +6,7 @@
 
 imagoLabel runs entirely in your browser: open a folder of images, click an object to segment it, assign a class, and export annotations in common training formats (COCO, YOLO, Pascal VOC). Images never leave your computer, and there is nothing to install.
 
-> **Status:** early development. Open a folder, click objects to outline them automatically (or draw boxes and polygons by hand), manage classes, and your work saves automatically. Export (phase 3) is next.
+> **Status:** usable. Open a folder, click objects to outline them automatically (or draw boxes and polygons by hand), and export for training. Polish (phase 4) is next.
 
 ## Roadmap
 
@@ -15,7 +15,7 @@ imagoLabel runs entirely in your browser: open a folder of images, click an obje
 | 0. Model benchmark ✓ | Measure candidate SAM models on CPU and GPU across the team's machines |
 | 1. Core ✓ | Open a folder, image list, zoom/pan, manual boxes and polygons, classes, autosave, per-image status and resume |
 | 2. One-click segmentation ✓ | SAM in a background worker, include/exclude points, background pre-encoding, segment-the-visible-area when zoomed |
-| 3. Export and import | COCO, YOLO (detect and seg), Pascal VOC, CSV; import COCO/YOLO |
+| **3. Export and import** ✓ | COCO, YOLO (detect and seg), Pascal VOC, CSV; import COCO/YOLO |
 | 4. Polish | Undo/redo, shortcuts, dark mode, offline support, public release |
 
 ## Using imagoLabel
@@ -43,6 +43,28 @@ Annotations save automatically into a hidden `.imagoLabel` folder inside the ima
 Segmentation uses [SAM 2.1 small](https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX), running on your graphics card when it can and on the CPU otherwise. Upcoming images are prepared in the background so clicks are near-instant.
 
 **Brave users:** Brave turns off the folder access imagoLabel relies on. Open `brave://flags/#file-system-access-api`, set it to **Enabled**, and relaunch.
+
+## Exporting for training
+
+**Export…** in the right-hand panel writes a dataset into a folder you choose:
+
+| Format | What you get |
+|---|---|
+| **YOLO — boxes** (Ultralytics detect) | `labels/train/*.txt` with one box per line, plus `data.yaml` |
+| **YOLO — polygons** (Ultralytics segment) | The same, with a polygon per line |
+| **COCO JSON** | One `annotations.json` with boxes and polygons |
+| **Pascal VOC XML** | One `.xml` per image, boxes only |
+| **CSV** | One row per annotation, with the polygon when there is one |
+
+Options: copy the images alongside the labels (so the export is ready to train on), hold back a validation split (the same image always lands in the same set, so re-exporting later doesn't shuffle images between training and validation), and choose whether to export every annotated image or only those marked done. Skipped images and annotations without a class are left out.
+
+For YOLO the generated `data.yaml` deliberately omits `path`, so Ultralytics resolves `train:`/`val:` relative to the file itself:
+
+```bash
+yolo detect train data=data.yaml model=yolo11n.pt epochs=100 imgsz=640
+```
+
+**Import…** reads annotations made elsewhere — a COCO JSON file, or a folder of YOLO label files (with `data.yaml` or `classes.txt` for the class names). Annotations are matched to images by file name, existing classes are reused, and you choose whether images that already have annotations are replaced.
 
 ## Segmentation benchmark
 
