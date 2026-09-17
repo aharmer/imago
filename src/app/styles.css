@@ -302,3 +302,5 @@ h1.brand { font-size: 3rem; }
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
   z-index: 20;
 }
+
+.brand-mark { display: block; width: 88px; height: 88px; border-radius: 20px; margin-bottom: 0.75rem; }

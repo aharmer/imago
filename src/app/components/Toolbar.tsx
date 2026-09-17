@@ -106,8 +106,8 @@ export function Toolbar({ onShowHelp }: { onShowHelp: () => void }) {
 
       <div className="toolbar-group">
         <SaveIndicator />
-        <button onClick={onShowHelp} title="Keyboard and mouse shortcuts (?)" aria-label="Keyboard and mouse shortcuts">
-          ?
+        <button onClick={onShowHelp} title="Keyboard and mouse shortcuts">
+          Shortcuts <kbd>?</kbd>
         </button>
         <button onClick={() => void closeFolder()} title="Save and close this folder">
           Close

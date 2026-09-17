@@ -1,57 +1,163 @@
-// Draws imagoLabel's app icons (a dashed annotation box around a segmented shape) and writes them
-// as PNGs. Run with `node scripts/make-icons.mjs` after changing the design.
-import { deflateSync } from 'node:zlib';
-import { crc32 } from 'node:zlib';
+// Draws imagoLabel's app icon and writes it as PNGs.
+// The mark: an imago (the adult insect) being annotated — one wing pair filled in as a segmentation
+// mask, a traced outline with its points on the other, inside a dashed selection box.
+// Run with `node scripts/make-icons.mjs` after changing the design.
+import { crc32, deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const BACKGROUND = [22, 24, 29];
-const BODY = [37, 99, 235];
-const HEAD = [91, 140, 255];
-const BOX = [255, 176, 0];
+const INK = [16, 18, 23];
+const WING = [37, 99, 235];
+const WING_LIGHT = [91, 140, 255];
+const BODY = [226, 232, 240];
+const MARK = [255, 176, 0];
 
-function canvas(size) {
-  const pixels = new Uint8Array(size * size * 4);
-  for (let i = 0; i < size * size; i++) {
-    pixels.set(BACKGROUND, i * 4);
-    pixels[i * 4 + 3] = 255;
-  }
-  const set = (x, y, colour) => {
-    if (x < 0 || y < 0 || x >= size || y >= size) return;
-    const i = (y * size + x) * 4;
-    pixels.set(colour, i);
-    pixels[i + 3] = 255;
+/** Everything is drawn at this multiple and averaged down, which gives smooth edges. */
+const SUPERSAMPLE = 4;
+
+function surface(size) {
+  const pixels = new Float64Array(size * size * 3);
+  const alpha = new Float64Array(size * size);
+
+  const blend = (x, y, colour, a = 1) => {
+    if (a <= 0 || x < 0 || y < 0 || x >= size || y >= size) return;
+    const i = y * size + x;
+    for (let c = 0; c < 3; c++) pixels[i * 3 + c] = pixels[i * 3 + c] * (1 - a) + colour[c] * a;
+    alpha[i] = alpha[i] * (1 - a) + a;
   };
-  return {
+
+  const api = {
     pixels,
-    ellipse(cx, cy, rx, ry, colour) {
-      for (let y = Math.floor(cy - ry); y <= cy + ry; y++) {
-        for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
-          const dx = (x - cx) / rx;
-          const dy = (y - cy) / ry;
-          if (dx * dx + dy * dy <= 1) set(x, y, colour);
+    alpha,
+    fill(colour) {
+      for (let i = 0; i < size * size; i++) {
+        for (let c = 0; c < 3; c++) pixels[i * 3 + c] = colour[c];
+        alpha[i] = 1;
+      }
+    },
+    /** Rounded rectangle, used for the icon's background plate. */
+    roundedRect(left, top, width, height, radius, colour) {
+      for (let y = Math.floor(top); y < top + height; y++) {
+        for (let x = Math.floor(left); x < left + width; x++) {
+          const dx = Math.max(left + radius - x, x - (left + width - radius), 0);
+          const dy = Math.max(top + radius - y, y - (top + height - radius), 0);
+          if (Math.hypot(dx, dy) <= radius) blend(x, y, colour);
         }
+      }
+    },
+    /** Ellipse, optionally rotated, optionally only its outline. */
+    ellipse(cx, cy, rx, ry, rotation, colour, { stroke = 0 } = {}) {
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      const reach = Math.max(rx, ry) + stroke;
+      for (let y = Math.floor(cy - reach); y <= cy + reach; y++) {
+        for (let x = Math.floor(cx - reach); x <= cx + reach; x++) {
+          const ox = x - cx;
+          const oy = y - cy;
+          const u = (ox * cos + oy * sin) / rx;
+          const v = (-ox * sin + oy * cos) / ry;
+          const d = Math.hypot(u, v);
+          if (!stroke) {
+            if (d <= 1) blend(x, y, colour);
+          } else {
+            // Approximate distance from the ellipse edge, in pixels.
+            const edge = Math.abs(d - 1) * Math.min(rx, ry);
+            if (edge <= stroke / 2) blend(x, y, colour);
+          }
+        }
+      }
+    },
+    line(x1, y1, x2, y2, thickness, colour) {
+      const minX = Math.floor(Math.min(x1, x2) - thickness);
+      const maxX = Math.ceil(Math.max(x1, x2) + thickness);
+      const minY = Math.floor(Math.min(y1, y2) - thickness);
+      const maxY = Math.ceil(Math.max(y1, y2) + thickness);
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const lengthSq = dx * dx + dy * dy || 1;
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lengthSq));
+          if (Math.hypot(x - (x1 + t * dx), y - (y1 + t * dy)) <= thickness / 2) blend(x, y, colour);
+        }
+      }
+    },
+    curve(points, thickness, colour) {
+      for (let i = 1; i < points.length; i++) api.line(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1], thickness, colour);
+    },
+    polygon(points, colour) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const [x, y] of points) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+      for (let y = Math.floor(minY); y <= maxY; y++) {
+        for (let x = Math.floor(minX); x <= maxX; x++) {
+          let inside = false;
+          for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+            const [xi, yi] = points[i];
+            const [xj, yj] = points[j];
+            if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+          }
+          if (inside) blend(x, y, colour);
+        }
+      }
+    },
+    square(cx, cy, half, colour) {
+      for (let y = Math.round(cy - half); y <= cy + half; y++) {
+        for (let x = Math.round(cx - half); x <= cx + half; x++) blend(x, y, colour);
       }
     },
     dashedRect(left, top, width, height, thickness, dash, gap, colour) {
       const on = (position) => position % (dash + gap) < dash;
-      for (let t = 0; t < thickness; t++) {
-        for (let x = left; x <= left + width; x++) {
-          if (on(x - left)) {
-            set(x, top + t, colour);
-            set(x, top + height - t, colour);
-          }
-        }
-        for (let y = top; y <= top + height; y++) {
-          if (on(y - top)) {
-            set(left + t, y, colour);
-            set(left + width - t, y, colour);
-          }
-        }
+      for (let x = Math.round(left); x <= left + width; x++) {
+        if (!on(x - left)) continue;
+        api.square(x, top, thickness / 2, colour);
+        api.square(x, top + height, thickness / 2, colour);
+      }
+      for (let y = Math.round(top); y <= top + height; y++) {
+        if (!on(y - top)) continue;
+        api.square(left, y, thickness / 2, colour);
+        api.square(left + width, y, thickness / 2, colour);
       }
     },
   };
+  return api;
+}
+
+/** Average the supersampled drawing down to the final size. */
+function downsample(big, size, factor) {
+  const out = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      for (let sy = 0; sy < factor; sy++) {
+        for (let sx = 0; sx < factor; sx++) {
+          const i = (y * factor + sy) * size * factor + (x * factor + sx);
+          r += big.pixels[i * 3];
+          g += big.pixels[i * 3 + 1];
+          b += big.pixels[i * 3 + 2];
+          a += big.alpha[i];
+        }
+      }
+      const n = factor * factor;
+      const i = (y * size + x) * 4;
+      out[i] = Math.round(r / n);
+      out[i + 1] = Math.round(g / n);
+      out[i + 2] = Math.round(b / n);
+      out[i + 3] = Math.round((a / n) * 255);
+    }
+  }
+  return out;
 }
 
 function png(size, pixels) {
@@ -82,29 +188,97 @@ function png(size, pixels) {
   ]);
 }
 
-function icon(size, padding) {
-  const c = canvas(size);
-  const inset = Math.round(size * padding);
-  const inner = size - inset * 2;
-  c.ellipse(size / 2, inset + inner * 0.62, inner * 0.26, inner * 0.32, BODY);
-  c.ellipse(size / 2, inset + inner * 0.24, inner * 0.15, inner * 0.12, HEAD);
-  c.dashedRect(
-    inset + Math.round(inner * 0.1),
-    inset + Math.round(inner * 0.05),
-    Math.round(inner * 0.8),
-    Math.round(inner * 0.9),
-    Math.max(2, Math.round(size * 0.025)),
-    Math.round(size * 0.07),
-    Math.round(size * 0.05),
-    BOX,
-  );
-  return png(size, c.pixels);
+/**
+ * @param size   final pixel size
+ * @param inset  free space around the mark, as a fraction (maskable icons need more)
+ * @param plate  draw the dark background plate (the app icon) or leave it transparent
+ */
+function icon(size, inset, plate = true) {
+  const s = size * SUPERSAMPLE;
+  const c = surface(s);
+  const pad = s * inset;
+  const inner = s - pad * 2;
+  const u = inner / 100; // work in hundredths of the inner square
+  const at = (x, y) => [pad + (50 + x) * u, pad + (50 + y) * u];
+
+  if (plate) c.roundedRect(0, 0, s, s, s * 0.22, INK);
+
+  const [cx, cy] = at(0, 2);
+  // Wings: upper pair swept back, lower pair smaller. The left side is the filled "mask",
+  // the right side is the traced outline, as if one half has been segmented and the other drawn.
+  /**
+   * One wing: a drop shape with its point at the body and its broad end sweeping outward.
+   * `angle` is the direction it points; `length` and `width` are in hundredths of the square.
+   */
+  const wingOutline = (angle, length, width, steps = 80) => {
+    const points = [];
+    for (let i = 0; i < steps; i++) {
+      const t = (i / steps) * Math.PI * 2;
+      // A cardioid: no radius at all at t = 0 (the point), swelling to full length opposite it.
+      const r = (1 - Math.cos(t)) / 2;
+      const px = r * length;
+      const py = Math.sin(t) * width * (0.35 + 0.65 * r);
+      points.push([cx + px * Math.cos(angle) - py * Math.sin(angle), cy + px * Math.sin(angle) + py * Math.cos(angle)]);
+    }
+    return points;
+  };
+
+  const wings = [
+    // Angles point to the right-hand wing of each pair: upper swept up, lower swept down.
+    { angle: -0.85, length: 44 * u, width: 20 * u, colour: WING_LIGHT },
+    { angle: 0.95, length: 34 * u, width: 16 * u, colour: WING },
+  ];
+  for (const w of wings) {
+    // Left wing filled in, like a segmentation mask; right wing traced, like a polygon.
+    // Mirroring across the body negates the x direction, which is the same as π − angle.
+    c.polygon(wingOutline(Math.PI - w.angle, w.length, w.width), w.colour);
+    const traced = wingOutline(w.angle, w.length, w.width);
+    c.curve([...traced, traced[0]], 3.4 * u, w.colour);
+    for (let i = 0; i < 6; i++) {
+      const [px, py] = traced[Math.round((i / 6) * traced.length) % traced.length];
+      c.square(px, py, 2.9 * u, BODY);
+    }
+  }
+
+  // Body, head and antennae.
+  c.ellipse(cx, cy + 2 * u, 5.5 * u, 21 * u, 0, BODY);
+  c.ellipse(cx, pad + 26 * u, 6.5 * u, 6 * u, 0, BODY);
+  for (const side of [-1, 1]) {
+    const tip = at(side * 15, -36);
+    c.curve(
+      [
+        at(side * 3, -25),
+        at(side * 9, -32),
+        tip,
+      ],
+      2.4 * u,
+      BODY,
+    );
+    c.ellipse(tip[0], tip[1], 2.6 * u, 2.6 * u, 0, MARK);
+  }
+
+  // The selection box around it, with corner handles.
+  const left = pad + 6 * u;
+  const top = pad + 8 * u;
+  const width = inner - 12 * u;
+  const height = inner - 16 * u;
+  c.dashedRect(left, top, width, height, 3 * u, 9 * u, 6 * u, MARK);
+  for (const [hx, hy] of [
+    [left, top],
+    [left + width, top],
+    [left, top + height],
+    [left + width, top + height],
+  ]) {
+    c.square(hx, hy, 4.4 * u, MARK);
+  }
+
+  return png(size, downsample(c, size, SUPERSAMPLE));
 }
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'icons');
 mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'icon-192.png'), icon(192, 0.06));
-writeFileSync(join(out, 'icon-512.png'), icon(512, 0.06));
+writeFileSync(join(out, 'icon-192.png'), icon(192, 0.07));
+writeFileSync(join(out, 'icon-512.png'), icon(512, 0.07));
 // Maskable icons need their content inside a safe area, because launchers crop the edges.
-writeFileSync(join(out, 'icon-maskable-512.png'), icon(512, 0.18));
+writeFileSync(join(out, 'icon-maskable-512.png'), icon(512, 0.2));
 console.log(`Wrote icons to ${out}`);

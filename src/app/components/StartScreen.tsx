@@ -78,6 +78,7 @@ export function StartScreen() {
   return (
     <main className="start">
       <div className="start-inner">
+        <img className="brand-mark" src="/icons/icon-512.png" width={88} height={88} alt="" />
         <h1 className="brand">imagoLabel</h1>
         <p className="tagline">Free image annotation with one-click segmentation, for training deep learning models. Your images never leave this computer.</p>
 
