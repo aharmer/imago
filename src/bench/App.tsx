@@ -3,7 +3,7 @@ import { detectEnv, gpuLabel, type EnvInfo } from './env';
 import { MODELS, deviceLabel } from './models';
 import { Preview, type LoadedImage } from './Preview';
 import type { BenchResult, FromWorker, MaskData, MaskOverlay, ModelConfig, Point, Stage, ToWorker } from './protocol';
-import { ms, toJson, toMarkdown, verdict, VERDICT_TEXT, type Report } from './report';
+import { fileSize as mb, ms, toJson, toMarkdown, verdict, VERDICT_TEXT, type Report } from './report';
 import { makeTestImage } from './testImage';
 
 type RowStatus = 'queued' | 'running' | 'done' | 'error' | 'stopped';
@@ -28,7 +28,6 @@ const STAGE_TEXT: Record<Stage, string> = {
 const LABEL_KEY = 'imago-bench-label';
 
 const createWorker = () => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-const mb = (bytes: number) => `${(bytes / 1048576).toFixed(bytes < 10 * 1048576 ? 1 : 0)} MB`;
 
 function progressText(p: Progress) {
   let text = STAGE_TEXT[p.stage];

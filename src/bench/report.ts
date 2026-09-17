@@ -22,6 +22,9 @@ export const VERDICT_TEXT: Record<Verdict, string> = {
   slow: 'Too slow',
 };
 
+export const fileSize = (bytes: number) =>
+  bytes < 1048576 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1048576).toFixed(bytes < 10 * 1048576 ? 1 : 0)} MB`;
+
 export const ms = (v: number | null) => (v == null ? '–' : v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
 
 export interface ImageSummary {
@@ -58,7 +61,7 @@ export function toMarkdown(report: Report) {
     `- **CPU threads:** ${env.cpuThreads} (inference threads: ${report.settings.threads === 'auto' ? `auto = ${env.autoThreads}` : report.settings.threads})`,
     `- **Memory:** ${env.deviceMemoryGB == null ? 'unknown' : `${env.deviceMemoryGB >= 8 ? '8+' : env.deviceMemoryGB} GB`}`,
     `- **GPU:** ${gpuLabel(env.gpu)}${env.gpu.available ? ` (fp16: ${env.gpu.f16 ? 'yes' : 'no'})` : ''}`,
-    `- **Image:** ${image.width}×${image.height} (${(image.width * image.height / 1e6).toFixed(1)} MP, ${(image.bytes / 1048576).toFixed(1)} MB)`,
+    `- **Image:** ${image.width}×${image.height} (${(image.width * image.height / 1e6).toFixed(1)} MP, ${fileSize(image.bytes)})`,
     '',
     '| Model | Device | Precision | Load | Encode (first) | Encode (typical) | Click | Full-res mask | Verdict |',
     '|---|---|---|---|---|---|---|---|---|',
