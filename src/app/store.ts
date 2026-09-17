@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { PromptPoint, Region } from './segment/protocol';
 import { FolderStore, LOCK_STALE_MS, rememberFolder, type ImageEntry, type LockFile } from './project/folder';
 import {
   newId,
@@ -6,6 +7,7 @@ import {
   newProject,
   nextClassColor,
   type Annotation,
+  type BoxShape,
   type ClassDef,
   type ImageDoc,
   type ImageStatus,
@@ -13,7 +15,20 @@ import {
   type Shape,
 } from './project/types';
 
-export type Tool = 'select' | 'box' | 'polygon';
+export type Tool = 'segment' | 'select' | 'box' | 'polygon';
+
+/** An object being segmented: prompts so far and the model's latest outline, not yet saved. */
+export interface PendingSegment {
+  /** Which encoded picture the prompts refer to (image name plus region). */
+  key: string;
+  region: Region;
+  points: PromptPoint[];
+  box: BoxShape | null;
+  polygon: Array<[number, number]> | null;
+  score?: number;
+  busy: boolean;
+  error: string | null;
+}
 export type Filter = 'all' | ImageStatus;
 export type SaveState = { kind: 'saved' } | { kind: 'pending' } | { kind: 'error'; message: string };
 export type OpenResult = { ok: true } | { ok: false; reason: 'empty' } | { ok: false; reason: 'locked'; lock: LockFile };
@@ -44,6 +59,7 @@ interface State {
   imageError: string | null;
 
   tool: Tool;
+  pendingSegment: PendingSegment | null;
   activeClassId: string | null;
   selectedId: string | null;
   past: Annotation[][];
@@ -57,6 +73,9 @@ interface State {
   setFilter(filter: Filter): void;
 
   setTool(tool: Tool): void;
+  setPendingSegment(pending: PendingSegment | null): void;
+  /** Save the pending segmentation as a polygon annotation, if the model produced one. */
+  commitPendingSegment(): void;
   setActiveClass(id: string | null): void;
   select(id: string | null): void;
 
@@ -117,6 +136,12 @@ async function decodeImage(entry: ImageEntry): Promise<LoadedImage> {
   });
   full.close();
   return { name: entry.name, bitmap, width, height };
+}
+
+/** Decoded image for any image in the open folder (cached for the current image and its neighbours). */
+export function loadImageByName(name: string) {
+  const entry = useStore.getState().images.find((i) => i.name === name);
+  return entry ? loadImage(entry) : Promise.reject(new Error(`No image named ${name}`));
 }
 
 function loadImage(entry: ImageEntry) {
@@ -194,6 +219,7 @@ export const useStore = create<State>()((set, get) => {
     image: null,
     imageError: null,
     tool: 'select',
+    pendingSegment: null,
     activeClassId: null,
     selectedId: null,
     past: [],
@@ -249,6 +275,7 @@ export const useStore = create<State>()((set, get) => {
       if (!folder) return;
       const index = images.findIndex((i) => i.name === name);
       if (index < 0) return;
+      get().commitPendingSegment();
       const token = ++navToken;
       if (currentName !== name) void get().flushSaves();
       set({ currentName: name, selectedId: null, past: [], future: [], imageError: null });
@@ -287,7 +314,21 @@ export const useStore = create<State>()((set, get) => {
     },
 
     setFilter: (filter) => set({ filter }),
-    setTool: (tool) => set({ tool, selectedId: tool === 'select' ? get().selectedId : null }),
+    setTool(tool) {
+      if (tool !== 'segment') get().commitPendingSegment();
+      set({ tool, selectedId: tool === 'select' ? get().selectedId : null });
+    },
+
+    setPendingSegment: (pendingSegment) => set({ pendingSegment }),
+
+    commitPendingSegment() {
+      const { pendingSegment } = get();
+      if (!pendingSegment) return;
+      set({ pendingSegment: null });
+      if (pendingSegment.polygon && pendingSegment.polygon.length >= 3) {
+        get().addAnnotation({ type: 'polygon', points: pendingSegment.polygon }, 'sam', pendingSegment.score);
+      }
+    },
     setActiveClass: (activeClassId) => set({ activeClassId }),
     select: (selectedId) => set({ selectedId }),
 

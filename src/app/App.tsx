@@ -19,6 +19,7 @@ function useShortcuts() {
       if (mod && key === 'z') s[event.shiftKey ? 'redo' : 'undo']();
       else if (mod && key === 'y') s.redo();
       else if (mod) return;
+      else if (key === 's') s.setTool('segment');
       else if (key === 'v') s.setTool('select');
       else if (key === 'b') s.setTool('box');
       else if (key === 'p') s.setTool('polygon');

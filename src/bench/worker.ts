@@ -1,6 +1,8 @@
 // Runs one SAM model off the main thread: load → prepare image → encode → decode clicks.
 // The page creates a fresh worker per benchmark so each model starts with clean memory.
 import { AutoModel, AutoProcessor, RawImage, Tensor, env } from '@huggingface/transformers';
+import { bestMask, keepClickedRegions, upsampleMask } from '../shared/mask';
+import { configureOnnxRuntime, onnxEnv } from '../shared/ort';
 import type { BenchResult, Box, FromWorker, MaskData, ModelConfig, Point, ToWorker } from './protocol';
 
 interface WorkerScope {
@@ -10,14 +12,8 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope;
 const post = (message: FromWorker, transfer: Transferable[] = []) => scope.postMessage(message, transfer);
 
-// Serve ONNX Runtime's WASM from our own origin (copied by scripts/copy-ort.mjs) rather than a CDN.
-env.allowLocalModels = false;
-const onnx = env.backends.onnx as { wasm: { wasmPaths?: unknown; numThreads?: number } };
-const ortBase = new URL(`${import.meta.env.BASE_URL}ort/`, self.location.origin).href;
-const ortVariant = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-  ? 'ort-wasm-simd-threaded'
-  : 'ort-wasm-simd-threaded.asyncify';
-onnx.wasm.wasmPaths = { mjs: `${ortBase}${ortVariant}.mjs`, wasm: `${ortBase}${ortVariant}.wasm` };
+configureOnnxRuntime();
+const onnx = onnxEnv();
 
 const DTYPE_SUFFIX: Record<ModelConfig['dtype'], string> = { fp32: '', fp16: '_fp16', q8: '_quantized', q4f16: '_q4f16' };
 const MAX_FULL_RES_PIXELS = 120_000_000;
@@ -111,124 +107,17 @@ async function runDecoder(points: Point[]) {
   return model({ ...current.embeddings, input_points, input_labels });
 }
 
-/** Bilinearly upsample one low-res mask (logits) to outW×outH and threshold at 0. */
-function upsampleMask(
-  logits: ArrayLike<number>,
-  offset: number,
-  maskW: number,
-  maskH: number,
-  cropW: number,
-  cropH: number,
-  outW: number,
-  outH: number,
-) {
-  const out = new Uint8Array(outW * outH);
-  const maxU = Math.max(0, Math.ceil(cropW) - 1);
-  const maxV = Math.max(0, Math.ceil(cropH) - 1);
-  const x0 = new Int32Array(outW);
-  const x1 = new Int32Array(outW);
-  const wx = new Float32Array(outW);
-  for (let x = 0; x < outW; x++) {
-    const u = Math.min(Math.max(((x + 0.5) * cropW) / outW - 0.5, 0), maxU);
-    x0[x] = Math.floor(u);
-    x1[x] = Math.min(x0[x] + 1, maxU);
-    wx[x] = u - x0[x];
-  }
-  for (let y = 0; y < outH; y++) {
-    const v = Math.min(Math.max(((y + 0.5) * cropH) / outH - 0.5, 0), maxV);
-    const y0 = Math.floor(v);
-    const y1 = Math.min(y0 + 1, maxV, maskH - 1);
-    const wy = v - y0;
-    const r0 = offset + y0 * maskW;
-    const r1 = offset + y1 * maskW;
-    const row = y * outW;
-    for (let x = 0; x < outW; x++) {
-      const top = logits[r0 + x0[x]] * (1 - wx[x]) + logits[r0 + x1[x]] * wx[x];
-      const bottom = logits[r1 + x0[x]] * (1 - wx[x]) + logits[r1 + x1[x]] * wx[x];
-      if (top * (1 - wy) + bottom * wy > 0) out[row + x] = 1;
-    }
-  }
-  return out;
-}
-
-/**
- * SAM masks often include a few stray specks away from the object. They are invisible at a glance
- * but stretch the bounding box, so keep only the region(s) the user actually clicked on — or, when
- * there is no click, the largest one.
- */
-function keepClickedRegions(mask: Uint8Array, width: number, height: number, seeds: Array<[number, number]>) {
-  const labels = new Int32Array(mask.length).fill(-1);
-  const stack = new Int32Array(mask.length);
-  const sizes: number[] = [];
-  for (let start = 0; start < mask.length; start++) {
-    if (!mask[start] || labels[start] >= 0) continue;
-    const label = sizes.length;
-    let size = 0;
-    let top = 0;
-    stack[top++] = start;
-    labels[start] = label;
-    while (top > 0) {
-      const p = stack[--top];
-      size++;
-      const x = p % width;
-      const y = (p / width) | 0;
-      if (x > 0 && mask[p - 1] && labels[p - 1] < 0) labels[stack[top++] = p - 1] = label;
-      if (x < width - 1 && mask[p + 1] && labels[p + 1] < 0) labels[stack[top++] = p + 1] = label;
-      if (y > 0 && mask[p - width] && labels[p - width] < 0) labels[stack[top++] = p - width] = label;
-      if (y < height - 1 && mask[p + width] && labels[p + width] < 0) labels[stack[top++] = p + width] = label;
-    }
-    sizes.push(size);
-  }
-  if (sizes.length <= 1) return;
-
-  const keep = new Set<number>();
-  for (const [sx, sy] of seeds) {
-    const cx = Math.min(width - 1, Math.max(0, Math.round(sx)));
-    const cy = Math.min(height - 1, Math.max(0, Math.round(sy)));
-    // A click can land a pixel or two outside the mask edge, so look in a small neighbourhood.
-    for (let r = 0; r <= 3 && !keep.size; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const x = cx + dx;
-          const y = cy + dy;
-          if (x < 0 || y < 0 || x >= width || y >= height) continue;
-          const label = labels[y * width + x];
-          if (label >= 0) keep.add(label);
-        }
-      }
-    }
-  }
-  if (keep.size === 0) keep.add(sizes.indexOf(Math.max(...sizes)));
-  for (let i = 0; i < mask.length; i++) if (mask[i] && !keep.has(labels[i])) mask[i] = 0;
-}
-
-/** Pick the highest-scoring mask and describe where it sits inside the low-res mask grid. */
-function bestMask(outputs: any) {
+/** Pick the best mask for the current image. */
+function pickMask(outputs: any) {
   if (!current) throw new Error('No image has been encoded yet.');
-  const scores = outputs.iou_scores.data as ArrayLike<number>;
-  const [, , count, maskH, maskW] = outputs.pred_masks.dims as number[];
-  let best = 0;
-  for (let i = 1; i < count; i++) if (scores[i] > scores[best]) best = i;
-  // SAM 1 pads the resized image to a square; SAM 2/3 stretch it, so the mask covers the whole grid.
-  const [resizedH, resizedW] = current.inputs.reshaped_input_sizes[0] as [number, number];
   const ip = processor.image_processor;
-  const padH = ip.do_pad && ip.pad_size ? ip.pad_size.height : resizedH;
-  const padW = ip.do_pad && ip.pad_size ? ip.pad_size.width : resizedW;
-  return {
-    logits: outputs.pred_masks.data as ArrayLike<number>,
-    offset: best * maskH * maskW,
-    maskW,
-    maskH,
-    cropW: (maskW * resizedW) / padW,
-    cropH: (maskH * resizedH) / padH,
-    score: scores[best],
-  };
+  return bestMask(outputs, current.inputs.reshaped_input_sizes[0], ip.do_pad && ip.pad_size ? ip.pad_size : null);
 }
 
 function renderMask(outputs: any, display: { width: number; height: number }, points: Point[]): MaskData {
-  const m = bestMask(outputs);
+  const m = pickMask(outputs);
   const { width, height } = display;
-  const mask = upsampleMask(m.logits, m.offset, m.maskW, m.maskH, m.cropW, m.cropH, width, height);
+  const mask = upsampleMask(m, width, height);
   const toDisplay = width / current!.width;
   keepClickedRegions(mask, width, height, points.filter((p) => p.positive).map((p) => [p.x * toDisplay, p.y * toDisplay]));
   const rgba = new Uint8ClampedArray(width * height * 4);
@@ -285,9 +174,9 @@ async function benchmark(msg: Extract<ToWorker, { type: 'benchmark' }>) {
   let fullResMaskMs: number | null = null;
   if (msg.measureFullRes && image.width * image.height <= MAX_FULL_RES_PIXELS) {
     post({ type: 'progress', stage: 'full-res mask' });
-    const m = bestMask(outputs);
+    const m = pickMask(outputs);
     const start = performance.now();
-    upsampleMask(m.logits, m.offset, m.maskW, m.maskH, m.cropW, m.cropH, image.width, image.height);
+    upsampleMask(m, image.width, image.height);
     fullResMaskMs = performance.now() - start;
   }
 

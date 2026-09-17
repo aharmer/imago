@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isTyping } from '../keyboard';
-import { useStore } from '../store';
+import { loadImageByName, useStore, type LoadedImage, type PendingSegment } from '../store';
 import type { Annotation, BoxShape, ClassDef, Shape } from '../project/types';
+import type { Region } from '../segment/protocol';
+import { regionPicture, segmenter, useModelStatus, type ModelStatus } from '../segment/segmenter';
 
 type Point = [number, number];
 interface View {
@@ -15,7 +17,8 @@ type Drag =
   | { kind: 'box'; start: Point; current: Point }
   | { kind: 'move'; id: string; start: Point; original: Shape; moved: boolean }
   | { kind: 'corner'; id: string; corner: Corner; original: BoxShape }
-  | { kind: 'vertex'; id: string; index: number; original: Point[] };
+  | { kind: 'vertex'; id: string; index: number; original: Point[] }
+  | { kind: 'segment'; start: Point; current: Point; button: number; exclude: boolean; add: boolean };
 
 const UNLABELLED = '#9ca3af';
 const MIN_BOX_SCREEN_PX = 4;
@@ -33,6 +36,13 @@ function normalizeBox(a: Point, b: Point): BoxShape {
     height: round(Math.abs(a[1] - b[1])),
   };
 }
+
+const fullRegion = (image: LoadedImage): Region => ({ x: 0, y: 0, width: image.width, height: image.height });
+const fullKey = (image: LoadedImage) => `${image.name}#full`;
+const contains = (r: Region, x: number, y: number, w = 0, h = 0) => x >= r.x && y >= r.y && x + w <= r.x + r.width && y + h <= r.y + r.height;
+
+/** Segment within a cropped region (sharper masks for small objects) once zoomed in past this. */
+const CROP_WHEN_VISIBLE_FRACTION_BELOW = 0.4;
 
 function translate(shape: Shape, dx: number, dy: number, w: number, h: number): Shape {
   if (shape.type === 'box') {
@@ -53,6 +63,8 @@ export function Viewer() {
   const selectedId = useStore((s) => s.selectedId);
   const classes = useStore((s) => s.project.classes);
   const activeClassId = useStore((s) => s.activeClassId);
+  const pending = useStore((s) => s.pendingSegment);
+  const modelStatus = useModelStatus((s) => s.status);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -144,6 +156,113 @@ export function Viewer() {
     setDraft([]);
   }, [draft]);
 
+  // --- One-click segmentation -----------------------------------------------------------------
+
+  // Load the model the first time the Segment tool is chosen.
+  useEffect(() => {
+    if (tool === 'segment') segmenter.load().catch(() => undefined);
+  }, [tool]);
+
+  // Once the model is ready, encode the current image and the next one in the background,
+  // so the first click on each image is answered straight away.
+  useEffect(() => {
+    if (modelStatus.kind !== 'ready' || !image) return;
+    segmenter.cancelBackground();
+    const encodeFull = (img: LoadedImage) =>
+      segmenter.encode(fullKey(img), fullRegion(img), () => regionPicture(img.bitmap, img.width, fullRegion(img)), 'background').catch(() => undefined);
+    void encodeFull(image);
+    const { images } = useStore.getState();
+    const next = images[images.findIndex((i) => i.name === image.name) + 1];
+    if (next) loadImageByName(next.name).then(encodeFull, () => undefined);
+  }, [modelStatus.kind, image]);
+
+  /** Crops encoded while zoomed in on this image, reused when the next click falls inside one. */
+  const crops = useRef<Array<{ key: string; region: Region }>>([]);
+  useEffect(() => {
+    crops.current = [];
+  }, [image]);
+
+  /** Pick what to encode for a new object: the whole image, or the zoomed-in view for small objects. */
+  function chooseRegion(img: LoadedImage, x: number, y: number, box?: BoxShape): { key: string; region: Region } {
+    const el = containerRef.current!;
+    const v = viewRef.current;
+    const x0 = clamp(-v.x / v.scale, 0, img.width);
+    const y0 = clamp(-v.y / v.scale, 0, img.height);
+    const x1 = clamp((el.clientWidth - v.x) / v.scale, 0, img.width);
+    const y1 = clamp((el.clientHeight - v.y) / v.scale, 0, img.height);
+    const visibleArea = (x1 - x0) * (y1 - y0);
+    const full = { key: fullKey(img), region: fullRegion(img) };
+    if (visibleArea >= CROP_WHEN_VISIBLE_FRACTION_BELOW * img.width * img.height || x1 - x0 < 16 || y1 - y0 < 16) return full;
+
+    const fits = (r: Region) => contains(r, x, y) && (!box || contains(r, box.x, box.y, box.width, box.height));
+    const reusable = crops.current.find(({ region: r }) => fits(r) && r.width * r.height <= 2.5 * visibleArea);
+    if (reusable) return reusable;
+
+    // A margin around the visible area gives the model context at the edges of the view.
+    const mx = (x1 - x0) * 0.1;
+    const my = (y1 - y0) * 0.1;
+    const left = Math.floor(clamp(x0 - mx, 0, img.width));
+    const top = Math.floor(clamp(y0 - my, 0, img.height));
+    const region = {
+      x: left,
+      y: top,
+      width: Math.ceil(clamp(x1 + mx, 0, img.width)) - left,
+      height: Math.ceil(clamp(y1 + my, 0, img.height)) - top,
+    };
+    if (!fits(region)) return full;
+    const crop = { key: `${img.name}#${region.x},${region.y},${region.width},${region.height}`, region };
+    crops.current = [crop, ...crops.current].slice(0, 6);
+    return crop;
+  }
+
+  const segmentSeq = useRef(0);
+  async function runSegment(next: PendingSegment) {
+    const img = image;
+    if (!img) return;
+    const seq = ++segmentSeq.current;
+    store().setPendingSegment({ ...next, busy: true, error: null });
+    try {
+      const box = next.box && { x: next.box.x, y: next.box.y, width: next.box.width, height: next.box.height };
+      const result = await segmenter.segment(next.key, next.region, () => regionPicture(img.bitmap, img.width, next.region), next.points, box);
+      if (seq !== segmentSeq.current || store().pendingSegment?.key !== next.key) return;
+      store().setPendingSegment({
+        ...next,
+        polygon: result.polygon,
+        score: result.score,
+        busy: false,
+        error: result.polygon ? null : 'Nothing found there. Try another spot.',
+      });
+    } catch (err) {
+      if (seq !== segmentSeq.current || store().pendingSegment?.key !== next.key) return;
+      store().setPendingSegment({ ...next, busy: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  const runSegmentRef = useRef(runSegment);
+  runSegmentRef.current = runSegment;
+
+  function segmentClick(p: Point, exclude: boolean, add: boolean) {
+    if (!image) return;
+    const current = store().pendingSegment;
+    const point = { x: round(p[0]), y: round(p[1]), positive: !exclude };
+    // Ctrl-click adds to the current object; Shift/right-click removes an area from it.
+    if (current && (add || exclude)) {
+      void runSegment({ ...current, points: [...current.points, point] });
+      return;
+    }
+    if (exclude) return;
+    // A plain click keeps the previous object and starts a new one.
+    store().commitPendingSegment();
+    const { key, region } = chooseRegion(image, p[0], p[1]);
+    void runSegment({ key, region, points: [point], box: null, polygon: null, busy: true, error: null });
+  }
+
+  function segmentBox(box: BoxShape) {
+    if (!image) return;
+    store().commitPendingSegment();
+    const { key, region } = chooseRegion(image, box.x + box.width / 2, box.y + box.height / 2, box);
+    void runSegment({ key, region, points: [], box, polygon: null, busy: true, error: null });
+  }
+
   // Keys that belong to the viewer. Registered in the capture phase so they win over global shortcuts.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -155,6 +274,16 @@ export function Viewer() {
       }
       if (event.key === 'f' || event.key === 'F') {
         fit();
+        return;
+      }
+      const pendingNow = useStore.getState().pendingSegment;
+      if (pendingNow && ['Enter', 'Escape', 'Backspace'].includes(event.key)) {
+        if (event.key === 'Enter') useStore.getState().commitPendingSegment();
+        else if (event.key === 'Escape') useStore.getState().setPendingSegment(null);
+        else if (pendingNow.points.length > 1) void runSegmentRef.current({ ...pendingNow, points: pendingNow.points.slice(0, -1) });
+        else useStore.getState().setPendingSegment(null);
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
       if (draft.length === 0) return;
@@ -187,6 +316,19 @@ export function Viewer() {
       updateDrag({ kind: 'pan', startX: event.clientX, startY: event.clientY, origin: viewRef.current });
       return;
     }
+    if (tool === 'segment' && (event.button === 0 || event.button === 2)) {
+      const p = clampToImage(toWorld(event.clientX, event.clientY));
+      event.currentTarget.setPointerCapture(event.pointerId);
+      updateDrag({
+        kind: 'segment',
+        start: p,
+        current: p,
+        button: event.button,
+        exclude: event.button === 2 || event.shiftKey || event.altKey,
+        add: event.ctrlKey || event.metaKey,
+      });
+      return;
+    }
     if (event.button !== 0) return;
     const p = clampToImage(toWorld(event.clientX, event.clientY));
     if (tool === 'box') {
@@ -209,7 +351,7 @@ export function Viewer() {
     if (d.kind === 'pan') {
       fitted.current = false;
       setView({ ...d.origin, x: d.origin.x + event.clientX - d.startX, y: d.origin.y + event.clientY - d.startY });
-    } else if (d.kind === 'box') {
+    } else if (d.kind === 'box' || d.kind === 'segment') {
       updateDrag({ ...d, current: clampToImage(p) });
     } else if (d.kind === 'move') {
       if (!d.moved) store().beginEdit();
@@ -231,6 +373,11 @@ export function Viewer() {
       const box = normalizeBox(d.start, d.current);
       const minSize = MIN_BOX_SCREEN_PX / viewRef.current.scale;
       if (box.width >= minSize && box.height >= minSize) store().addAnnotation(box);
+    } else if (d?.kind === 'segment') {
+      const box = normalizeBox(d.start, d.current);
+      const dragged = Math.max(box.width, box.height) * viewRef.current.scale > MIN_BOX_SCREEN_PX * 2;
+      if (dragged && d.button === 0 && !d.exclude) segmentBox(box);
+      else segmentClick(d.start, d.exclude, d.add);
     }
     updateDrag(null);
   }
@@ -272,7 +419,7 @@ export function Viewer() {
   const s = view.scale;
   const handleR = 5 / s;
   const activeColor = classById.get(activeClassId ?? '')?.color ?? UNLABELLED;
-  const cursor = drag?.kind === 'pan' ? 'grabbing' : tool === 'select' ? 'grab' : 'crosshair';
+  const cursor = drag?.kind === 'pan' ? 'grabbing' : tool === 'select' ? 'grab' : pending?.busy ? 'progress' : 'crosshair';
 
   return (
     <div
@@ -349,6 +496,30 @@ export function Viewer() {
               );
             })}
 
+            {pending && (
+              <g className="pending">
+                {pending.polygon && (
+                  <polygon
+                    className={`shape pending-shape${pending.busy ? ' busy' : ''}`}
+                    points={pending.polygon.map((p) => p.join(',')).join(' ')}
+                    stroke={activeColor}
+                    fill={activeColor}
+                  />
+                )}
+                {pending.box && (
+                  <rect className="shape drawing" x={pending.box.x} y={pending.box.y} width={pending.box.width} height={pending.box.height} stroke={activeColor} fill="none" />
+                )}
+                {pending.points.map((p, i) => (
+                  <circle key={i} className={`prompt ${p.positive ? 'positive' : 'negative'}`} cx={p.x} cy={p.y} r={handleR * 1.2} strokeWidth={2 / s} />
+                ))}
+              </g>
+            )}
+
+            {drag?.kind === 'segment' && !drag.exclude && Math.max(Math.abs(drag.current[0] - drag.start[0]), Math.abs(drag.current[1] - drag.start[1])) * s > MIN_BOX_SCREEN_PX * 2 && (() => {
+              const b = normalizeBox(drag.start, drag.current);
+              return <rect className="shape drawing" x={b.x} y={b.y} width={b.width} height={b.height} stroke={activeColor} fill={activeColor} />;
+            })()}
+
             {drag?.kind === 'box' && (() => {
               const b = normalizeBox(drag.start, drag.current);
               return <rect className="shape drawing" x={b.x} y={b.y} width={b.width} height={b.height} stroke={activeColor} fill={activeColor} />;
@@ -374,8 +545,21 @@ export function Viewer() {
         <div className="viewer-hud">
           {Math.round(s * 100)}% · {image.width}×{image.height}
           {tool === 'polygon' && (draft.length === 0 ? ' · Click to add points' : ' · Click the first point, double-click or press Enter to finish')}
+          {tool === 'segment' && ` · ${segmentHint(modelStatus, pending)}`}
         </div>
       )}
     </div>
   );
+}
+
+function segmentHint(status: ModelStatus, pending: PendingSegment | null) {
+  if (status.kind === 'loading') {
+    const pct = status.total ? ` ${Math.round((status.loaded / status.total) * 100)}%` : '';
+    return `Downloading the segmentation model${pct} (first time only)…`;
+  }
+  if (status.kind === 'error') return `Segmentation unavailable: ${status.message}`;
+  if (!pending) return 'Click an object to segment it, or drag a box around it';
+  if (pending.busy) return 'Segmenting…';
+  if (pending.error) return pending.error;
+  return 'Enter to keep · Ctrl+click to add · Shift+click to remove · Esc to discard';
 }

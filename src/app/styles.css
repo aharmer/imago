@@ -226,3 +226,14 @@ h1.brand { font-size: 3rem; }
 .handle.vertex { cursor: move; }
 .draft .handle { pointer-events: none; }
 .handle.closable { fill: #facc15; }
+
+/* Segmentation */
+.pending-shape { fill-opacity: 0.3; stroke-width: 2.5px; stroke-dasharray: 7 4; pointer-events: none; transition: opacity 0.15s; }
+.pending-shape.busy { opacity: 0.45; }
+.prompt { pointer-events: none; stroke: #fff; }
+.prompt.positive { fill: #16a34a; }
+.prompt.negative { fill: #dc2626; }
+.model-badge { font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: var(--hover); color: var(--muted); white-space: nowrap; }
+.model-badge.ready { color: var(--ok); }
+.model-badge.loading { color: var(--in-progress); }
+.model-badge.error { color: var(--error); }

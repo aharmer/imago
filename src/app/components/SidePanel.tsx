@@ -111,7 +111,7 @@ export function SidePanel() {
         <h2>
           This image <span className="muted">({doc?.annotations.length ?? 0})</span>
         </h2>
-        {doc && doc.annotations.length === 0 && <p className="muted small">No annotations yet. Draw a box (B) or polygon (P).</p>}
+        {doc && doc.annotations.length === 0 && <p className="muted small">No annotations yet. Click an object with Segment (S), or draw a box (B) or polygon (P).</p>}
         <ul className="annotation-list">
           {doc?.annotations.map((a, i) => {
             const cls = a.classId ? classById.get(a.classId) : undefined;

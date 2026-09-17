@@ -6,15 +6,15 @@
 
 imagoLabel runs entirely in your browser: open a folder of images, click an object to segment it, assign a class, and export annotations in common training formats (COCO, YOLO, Pascal VOC). Images never leave your computer, and there is nothing to install.
 
-> **Status:** early development. You can open a folder, draw and edit boxes and polygons, manage classes, and your work saves automatically. One-click segmentation (phase 2) and export (phase 3) are next.
+> **Status:** early development. Open a folder, click objects to outline them automatically (or draw boxes and polygons by hand), manage classes, and your work saves automatically. Export (phase 3) is next.
 
 ## Roadmap
 
 | Phase | Scope |
 |---|---|
 | 0. Model benchmark ✓ | Measure candidate SAM models on CPU and GPU across the team's machines |
-| **1. Core** ✓ | Open a folder, image list, zoom/pan, manual boxes and polygons, classes, autosave, per-image status and resume |
-| 2. One-click segmentation | SAM in a background worker, include/exclude points, background pre-encoding, segment-the-visible-area when zoomed |
+| 1. Core ✓ | Open a folder, image list, zoom/pan, manual boxes and polygons, classes, autosave, per-image status and resume |
+| 2. One-click segmentation ✓ | SAM in a background worker, include/exclude points, background pre-encoding, segment-the-visible-area when zoomed |
 | 3. Export and import | COCO, YOLO (detect and seg), Pascal VOC, CSV; import COCO/YOLO |
 | 4. Polish | Undo/redo, shortcuts, dark mode, offline support, public release |
 
@@ -22,13 +22,13 @@ imagoLabel runs entirely in your browser: open a folder of images, click an obje
 
 1. Open **https://imago-label.vercel.app** in Chrome, Edge or Brave (Brave needs a one-time setting; the app shows how).
 2. Click **Open image folder…** and choose a folder of JPEG, PNG or WebP images.
-3. Add your classes on the right, then draw.
+3. Add your classes on the right, pick the **Segment** tool (S) and click an object. The first time, the segmentation model (about 100 MB) downloads and is then cached by the browser.
 
 Annotations save automatically into a hidden `.imagoLabel` folder inside the image folder, so you can close the tab and carry on later; imagoLabel reopens at the image you were on. If the folder is open somewhere else (another tab, or a colleague on a shared drive), imagoLabel warns you before opening it.
 
 | Key | Action |
 |---|---|
-| V / B / P | Select, Box, Polygon tool |
+| S / V / B / P | Segment, Select, Box, Polygon tool |
 | 1–9 | Use that class (and apply it to the selected shape) |
 | Enter | Mark image done and go to the next (or finish a polygon) |
 | ← / → | Previous / next image |
@@ -37,6 +37,10 @@ Annotations save automatically into a hidden `.imagoLabel` folder inside the ima
 | Scroll · Space+drag | Zoom · pan (with Select, drag empty space to pan) |
 | F | Fit image to window |
 | Alt+click a polygon point | Remove that point |
+
+**Segmenting:** click an object and imagoLabel outlines it; drag a box instead for thin or awkward objects. Refine the outline before keeping it: **Ctrl+click** adds an area, **Shift+click** (or right-click) removes one, **Backspace** undoes the last click. Press **Enter** to keep it, or just click the next object (the current one is kept). **Esc** discards it. Zoom in on small objects before clicking: imagoLabel then segments just the visible area, which gives much sharper outlines.
+
+Segmentation uses [SAM 2.1 small](https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX), running on your graphics card when it can and on the CPU otherwise. Upcoming images are prepared in the background so clicks are near-instant.
 
 **Brave users:** Brave turns off the folder access imagoLabel relies on. Open `brave://flags/#file-system-access-api`, set it to **Enabled**, and relaunch.
 

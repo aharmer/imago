@@ -1,11 +1,28 @@
+import { useModelStatus } from '../segment/segmenter';
 import { useStore, type Tool } from '../store';
 import { STATUS_LABEL } from '../project/types';
 
 const TOOLS: Array<{ tool: Tool; label: string; key: string; title: string }> = [
+  { tool: 'segment', label: 'Segment', key: 'S', title: 'Click an object to outline it automatically, or drag a box around it' },
   { tool: 'select', label: 'Select', key: 'V', title: 'Select, move and edit shapes; drag empty space to pan' },
   { tool: 'box', label: 'Box', key: 'B', title: 'Drag to draw a box' },
   { tool: 'polygon', label: 'Polygon', key: 'P', title: 'Click to add points; Enter or click the first point to finish' },
 ];
+
+function ModelBadge() {
+  const status = useModelStatus((s) => s.status);
+  if (status.kind === 'idle') return null;
+  if (status.kind === 'loading') {
+    const pct = status.total ? ` ${Math.round((status.loaded / status.total) * 100)}%` : '';
+    return <span className="model-badge loading" title="Downloading the segmentation model. This only happens once.">Loading AI{pct}</span>;
+  }
+  if (status.kind === 'error') return <span className="model-badge error" title={status.message}>AI unavailable</span>;
+  return (
+    <span className="model-badge ready" title={status.device === 'webgpu' ? 'Segmentation is running on your graphics card' : 'Segmentation is running on the CPU'}>
+      AI · {status.device === 'webgpu' ? 'GPU' : 'CPU'}
+    </span>
+  );
+}
 
 function SaveIndicator() {
   const saveState = useStore((s) => s.saveState);
@@ -45,6 +62,7 @@ export function Toolbar() {
             {t.label} <kbd>{t.key}</kbd>
           </button>
         ))}
+        <ModelBadge />
         <span className="divider" />
         <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
           Undo
