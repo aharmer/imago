@@ -2,6 +2,8 @@
 
 **Free, browser-based image annotation with one-click segmentation, for training deep learning models.**
 
+🌐 **https://imago-label.vercel.app**
+
 imago runs entirely in your browser: open a folder of images, click an object to segment it, assign a class, and export annotations in common training formats (COCO, YOLO, Pascal VOC). Images never leave your computer, and there is nothing to install.
 
 > **Status:** early development. The annotation app is not built yet. What exists today is the **segmentation benchmark** (phase 0), used to choose which segmentation model imago ships with.
@@ -25,7 +27,7 @@ The benchmark page times one-click segmentation models in your browser on your h
 
 Please run it on the computers you'd annotate on, then send the copied results back.
 
-1. Open the benchmark in **Chrome or Microsoft Edge** (URL to follow once deployed; or run it locally, see below).
+1. Open **https://imago-label.vercel.app/bench/** in **Chrome or Microsoft Edge**.
 2. Give the machine a name, and optionally choose one of your own typical images.
 3. Click **Run benchmark**. The first run downloads the models (a few hundred MB in total), and later runs use the browser's cache.
 4. Click **Copy results** and paste them into an email, Teams message or GitHub issue.
