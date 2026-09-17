@@ -52,16 +52,27 @@ Segmentation uses [SAM 2.1 small](https://huggingface.co/onnx-community/sam2.1-h
 |---|---|
 | **YOLO — boxes** (Ultralytics detect) | `labels/train/*.txt` with one box per line, plus `data.yaml` |
 | **YOLO — polygons** (Ultralytics segment) | The same, with a polygon per line |
+| **YOLO — classification** (Ultralytics classify) | `train/<class>/image.jpg` folders, from cropped annotations or whole single-class images |
 | **COCO JSON** | One `annotations.json` with boxes and polygons |
 | **Pascal VOC XML** | One `.xml` per image, boxes only |
 | **CSV** | One row per annotation, with the polygon when there is one |
 
-Options: copy the images alongside the labels (so the export is ready to train on), hold back a validation split (the same image always lands in the same set, so re-exporting later doesn't shuffle images between training and validation), and choose whether to export every annotated image or only those marked done. Skipped images and annotations without a class are left out.
+Options: copy the images alongside the labels (so the export is ready to train on), set your own train/validation/test split with two sliders, and choose whether to export every annotated image or only those marked done. Skipped images and annotations without a class are left out.
+
+The split is decided by hashing each file name, so an image always lands in the same set: annotating more images and re-exporting won't move existing images between training, validation and test. With a small dataset the actual proportions can differ a little from the percentages you ask for; the export summary reports what each set actually got.
+
+For **classification**, each annotation is cropped out and saved in a folder named after its class, so one photo holding a specimen and a label yields one training image for each. Alternatively, whole images can be sorted by class, in which case images holding more than one class are left out and reported.
 
 For YOLO the generated `data.yaml` deliberately omits `path`, so Ultralytics resolves `train:`/`val:` relative to the file itself:
 
 ```bash
 yolo detect train data=data.yaml model=yolo11n.pt epochs=100 imgsz=640
+```
+
+Classification datasets are folders rather than a YAML, so train them from the export folder:
+
+```bash
+yolo classify train data=. model=yolo11n-cls.pt epochs=100 imgsz=224
 ```
 
 **Import…** reads annotations made elsewhere — a COCO JSON file, or a folder of YOLO label files (with `data.yaml` or `classes.txt` for the class names). Annotations are matched to images by file name, existing classes are reused, and you choose whether images that already have annotations are replaced.

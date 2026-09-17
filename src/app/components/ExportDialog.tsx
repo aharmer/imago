@@ -4,10 +4,18 @@ import { FORMAT_LABEL, FORMAT_NOTE, type Format } from '../export/formats';
 import { useStore } from '../store';
 import { Modal } from './Modal';
 
-const FORMATS: Format[] = ['yolo-detect', 'yolo-segment', 'coco', 'voc', 'csv'];
+const FORMATS: Format[] = ['yolo-detect', 'yolo-segment', 'yolo-classify', 'coco', 'voc', 'csv'];
+/** Leave at least a tenth of the images for training. */
+const MAX_HELD_BACK = 90;
 
 export function ExportDialog({ onClose }: { onClose: () => void }) {
-  const [options, setOptions] = useState<ExportOptions>({ format: 'yolo-detect', includeImages: true, valPercent: 20, include: 'annotated' });
+  const [options, setOptions] = useState<ExportOptions>({
+    format: 'yolo-detect',
+    includeImages: true,
+    split: { val: 20, test: 0 },
+    include: 'annotated',
+    classifySource: 'crops',
+  });
   const [plan, setPlan] = useState<ExportPlan | null>(null);
   const [phase, setPhase] = useState<'options' | 'running' | 'done'>('options');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -61,6 +69,15 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   }
 
   const set = (patch: Partial<ExportOptions>) => setOptions((o) => ({ ...o, ...patch }));
+  /** Move one slider, pushing the other down if together they'd leave too little for training. */
+  const setSplit = (which: 'val' | 'test', value: number) =>
+    setOptions((o) => {
+      const other = which === 'val' ? o.split.test : o.split.val;
+      const capped = Math.min(value, MAX_HELD_BACK);
+      const otherCapped = Math.min(other, MAX_HELD_BACK - capped);
+      return { ...o, split: which === 'val' ? { val: capped, test: otherCapped } : { val: otherCapped, test: capped } };
+    });
+  const trainPercent = 100 - options.split.val - options.split.test;
 
   return (
     <Modal title="Export annotations" onClose={onClose}>
@@ -69,7 +86,16 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           <p className="ok">
             Exported <strong>{summary.annotations}</strong> annotations for <strong>{summary.images}</strong> images into “{summary.folder}” ({summary.filesWritten} files).
           </p>
+          <p className="small muted">
+            Training {summary.counts.train} · validation {summary.counts.val} · test {summary.counts.test} images.
+          </p>
           {plan && plan.unlabelled > 0 && <p className="warn small">{plan.unlabelled} annotations had no class and were left out.</p>}
+          {summary.mixedClass.length > 0 && (
+            <p className="warn small">
+              {summary.mixedClass.length} image{summary.mixedClass.length === 1 ? ' holds' : 's hold'} more than one class and {summary.mixedClass.length === 1 ? 'was' : 'were'} left out. Export cropped
+              annotations instead to include them.
+            </p>
+          )}
           {summary.rotated.length > 0 && (
             <p className="warn small">
               {summary.rotated.length} image{summary.rotated.length === 1 ? '' : 's'} (e.g. {summary.rotated[0]}) carry an EXIF rotation. imagoLabel annotates them upright; check that your training code rotates them too.
@@ -77,7 +103,12 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           )}
           {options.format.startsWith('yolo') && (
             <p className="small">
-              Train with: <code>yolo {options.format === 'yolo-segment' ? 'segment' : 'detect'} train data=data.yaml model={options.format === 'yolo-segment' ? 'yolo11n-seg.pt' : 'yolo11n.pt'}</code>
+              Train with:{' '}
+              <code>
+                {options.format === 'yolo-classify'
+                  ? 'yolo classify train data=. model=yolo11n-cls.pt'
+                  : `yolo ${options.format === 'yolo-segment' ? 'segment' : 'detect'} train data=data.yaml model=${options.format === 'yolo-segment' ? 'yolo11n-seg.pt' : 'yolo11n.pt'}`}
+              </code>
             </p>
           )}
           <div className="modal-actions">
@@ -103,30 +134,65 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
           <fieldset disabled={phase === 'running'}>
             <legend>Options</legend>
-            <label className="choice">
-              <input type="checkbox" checked={options.includeImages} onChange={(e) => set({ includeImages: e.target.checked })} />
-              <span>
-                Copy the images too <span className="muted small">— makes the export ready to train on, but duplicates the image files</span>
-              </span>
-            </label>
-            <div className="fields">
-              <label>
-                Validation split
-                <select value={options.valPercent} onChange={(e) => set({ valPercent: Number(e.target.value) })}>
-                  <option value={0}>None (all training)</option>
-                  <option value={10}>10% validation</option>
-                  <option value={20}>20% validation</option>
-                  <option value={30}>30% validation</option>
+            {options.format === 'yolo-classify' ? (
+              <label className="field-row">
+                What becomes one training image
+                <select value={options.classifySource} onChange={(e) => set({ classifySource: e.target.value as ExportOptions['classifySource'] })}>
+                  <option value="crops">Each annotation, cropped out</option>
+                  <option value="images">The whole image (single-class images only)</option>
                 </select>
               </label>
-              <label>
-                Images to include
-                <select value={options.include} onChange={(e) => set({ include: e.target.value as ExportOptions['include'] })}>
-                  <option value="annotated">Every annotated image</option>
-                  <option value="done">Only images marked done</option>
-                </select>
+            ) : (
+              <label className="choice">
+                <input type="checkbox" checked={options.includeImages} onChange={(e) => set({ includeImages: e.target.checked })} />
+                <span>
+                  Copy the images too <span className="muted small">— makes the export ready to train on, but duplicates the image files</span>
+                </span>
+              </label>
+            )}
+
+            <div className="split">
+              <div className="split-bar" aria-hidden="true">
+                <span className="split-train" style={{ width: `${trainPercent}%` }} />
+                <span className="split-val" style={{ width: `${options.split.val}%` }} />
+                <span className="split-test" style={{ width: `${options.split.test}%` }} />
+              </div>
+              <p className="small">
+                <strong>{trainPercent}%</strong> training · <strong>{options.split.val}%</strong> validation · <strong>{options.split.test}%</strong> test
+                {plan && plan.docs.length > 0 && (
+                  <span className="muted">
+                    {' '}
+                    ≈ {Math.round((plan.docs.length * trainPercent) / 100)} / {Math.round((plan.docs.length * options.split.val) / 100)} /{' '}
+                    {Math.round((plan.docs.length * options.split.test) / 100)} images
+                  </span>
+                )}
+              </p>
+              <label className="slider">
+                <span>Validation</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={MAX_HELD_BACK}
+                  value={options.split.val}
+                  onChange={(e) => setSplit('val', Number(e.target.value))}
+                  aria-label="Validation percentage"
+                />
+                <output>{options.split.val}%</output>
+              </label>
+              <label className="slider">
+                <span>Test</span>
+                <input type="range" min={0} max={MAX_HELD_BACK} value={options.split.test} onChange={(e) => setSplit('test', Number(e.target.value))} aria-label="Test percentage" />
+                <output>{options.split.test}%</output>
               </label>
             </div>
+
+            <label className="field-row">
+              Images to include
+              <select value={options.include} onChange={(e) => set({ include: e.target.value as ExportOptions['include'] })}>
+                <option value="annotated">Every annotated image</option>
+                <option value="done">Only images marked done</option>
+              </select>
+            </label>
           </fieldset>
 
           <p className="summary">

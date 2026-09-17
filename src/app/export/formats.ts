@@ -2,11 +2,21 @@
 // Every format takes coordinates in original image pixels and writes whatever units it needs.
 import { shapeBounds, type Annotation, type ClassDef, type ImageDoc } from '../project/types';
 
-export type Format = 'yolo-detect' | 'yolo-segment' | 'coco' | 'voc' | 'csv';
+export type Format = 'yolo-detect' | 'yolo-segment' | 'yolo-classify' | 'coco' | 'voc' | 'csv';
+
+export type Split = 'train' | 'val' | 'test';
+export const SPLITS: Split[] = ['train', 'val', 'test'];
+
+/** Percentages held back from training; the rest is training data. */
+export interface SplitSizes {
+  val: number;
+  test: number;
+}
 
 export const FORMAT_LABEL: Record<Format, string> = {
   'yolo-detect': 'YOLO — boxes (Ultralytics detect)',
   'yolo-segment': 'YOLO — polygons (Ultralytics segment)',
+  'yolo-classify': 'YOLO — classification (Ultralytics classify)',
   coco: 'COCO JSON',
   voc: 'Pascal VOC XML',
   csv: 'CSV',
@@ -15,6 +25,7 @@ export const FORMAT_LABEL: Record<Format, string> = {
 export const FORMAT_NOTE: Record<Format, string> = {
   'yolo-detect': 'One .txt per image with a box per line, plus data.yaml. Polygons are converted to their bounding box.',
   'yolo-segment': 'One .txt per image with a polygon per line, plus data.yaml. Boxes are written as four-corner polygons.',
+  'yolo-classify': 'Folders of images per class (train/<class>/image.jpg). Each annotation is cropped out, or whole images are sorted by class.',
   coco: 'A single annotations.json holding boxes and polygons.',
   voc: 'One .xml per image, boxes only. Polygons are converted to their bounding box.',
   csv: 'One row per annotation: class, box, and the polygon when there is one.',
@@ -56,19 +67,19 @@ export function yoloLabel(doc: ImageDoc, classIndex: Map<string, number>, format
 }
 
 /** Ultralytics resolves relative train/val paths against the folder holding data.yaml when `path` is omitted. */
-export function dataYaml(classes: ClassDef[], hasVal: boolean) {
+export function dataYaml(classes: ClassDef[], present: Set<Split>, classify = false) {
   const names = classes.map((c, i) => `  ${i}: ${JSON.stringify(c.name)}`).join('\n');
-  return [
+  // Classification datasets are folders of images per class; detection keeps images in images/<split>.
+  const dir = (split: Split) => (classify ? split : `images/${split}`);
+  const lines = [
     '# Dataset exported by imagoLabel (https://imago-label.vercel.app)',
     `# Created ${new Date().toISOString()}`,
     '',
-    'train: images/train',
-    `val: images/${hasVal ? 'val' : 'train'}`,
-    '',
-    'names:',
-    names,
-    '',
-  ].join('\n');
+    `train: ${dir('train')}`,
+    `val: ${dir(present.has('val') ? 'val' : 'train')}`,
+  ];
+  if (present.has('test')) lines.push(`test: ${dir('test')}`);
+  return [...lines, '', 'names:', names, ''].join('\n');
 }
 
 export function readme(format: Format, hasImages: boolean) {
@@ -80,7 +91,15 @@ export function readme(format: Format, hasImages: boolean) {
     `Created: ${new Date().toISOString()}`,
     '',
   ];
-  if (format.startsWith('yolo')) {
+  if (format === 'yolo-classify') {
+    lines.push(
+      'Train with Ultralytics:',
+      '',
+      '  yolo classify train data=. model=yolo11n-cls.pt epochs=100 imgsz=224',
+      '',
+      'Each split folder holds one sub-folder per class, and Ultralytics takes the class from the folder name.',
+    );
+  } else if (format.startsWith('yolo')) {
     lines.push(
       'Train with Ultralytics:',
       '',
@@ -211,15 +230,20 @@ export function csvRows(docs: ImageDoc[], classes: ClassDef[], classIndex: Map<s
 }
 
 /**
- * Deterministic train/val split: the same image always lands in the same set, so re-exporting
- * after annotating more images doesn't shuffle images between training and validation.
+ * Deterministic split: the same image always lands in the same set, so re-exporting after
+ * annotating more images doesn't shuffle images between training, validation and test.
  */
-export function isValidation(name: string, valPercent: number) {
-  if (valPercent <= 0) return false;
+export function splitFor(name: string, sizes: SplitSizes): Split {
   let hash = 2166136261;
   for (let i = 0; i < name.length; i++) {
     hash ^= name.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return ((hash >>> 0) % 100) < valPercent;
+  const bucket = (hash >>> 0) % 100;
+  if (bucket < sizes.val) return 'val';
+  if (bucket < sizes.val + sizes.test) return 'test';
+  return 'train';
 }
+
+/** A file name safe to use as a folder name for a class. */
+export const classFolder = (name: string) => name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || 'unnamed';

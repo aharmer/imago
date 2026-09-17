@@ -257,3 +257,16 @@ h1.brand { font-size: 3rem; }
 .modal .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0; }
 .modal .fields label { gap: 0.3rem; }
 .modal .fields select { min-width: 0; width: 100%; }
+
+/* Export split control */
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-direction: row; font-size: 0.9rem; color: var(--text); margin: 0.35rem 0; }
+.field-row select { max-width: 60%; }
+.split { margin: 0.6rem 0 0.2rem; }
+.split p { margin: 0.3rem 0 0.4rem; }
+.split-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--hover); }
+.split-train { background: var(--accent); }
+.split-val { background: var(--in-progress); }
+.split-test { background: var(--skipped); }
+.slider { display: grid; grid-template-columns: 5rem 1fr 3rem; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); }
+.slider input { width: 100%; }
+.slider output { text-align: right; font-variant-numeric: tabular-nums; }
