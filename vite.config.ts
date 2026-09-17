@@ -15,7 +15,7 @@ export default defineConfig({
   plugins: [react()],
   // Keep Vite's dependency cache out of the project folder: sync clients (Dropbox, OneDrive) and
   // antivirus lock files there on Windows, which breaks Vite's cache rebuilds with EBUSY errors.
-  cacheDir: join(tmpdir(), 'imago-vite-cache'),
+  cacheDir: join(tmpdir(), 'imagoLabel-vite-cache'),
   server: { headers: crossOriginIsolation },
   preview: { headers: crossOriginIsolation },
   worker: { format: 'es' },

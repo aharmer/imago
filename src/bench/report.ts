@@ -5,7 +5,7 @@ import type { BenchResult } from './protocol';
 export type Verdict = 'smooth' | 'usable' | 'slow';
 
 /**
- * How the model would feel in imago. Encoding happens once per image and can run in the
+ * How the model would feel in imagoLabel. Encoding happens once per image and can run in the
  * background while the user works on the previous image; each click must feel instant.
  */
 export function verdict(r: BenchResult): Verdict {
@@ -48,13 +48,13 @@ export function toJson(report: Report) {
     const m = MODELS.find((x) => x.key === r.key)!;
     return { model: m.family, device: deviceLabel(m), precision: m.dtype, repo: m.repo, verdict: verdict(r), ...r };
   });
-  return JSON.stringify({ app: 'imago-benchmark', schema: 1, ...report, results }, null, 2);
+  return JSON.stringify({ app: 'imagoLabel-benchmark', schema: 1, ...report, results }, null, 2);
 }
 
 export function toMarkdown(report: Report) {
   const { env, image } = report;
   const lines = [
-    `### imago segmentation benchmark${report.label ? ` — ${report.label}` : ''}`,
+    `### imagoLabel segmentation benchmark${report.label ? ` — ${report.label}` : ''}`,
     '',
     `- **Date:** ${new Date(report.date).toLocaleString()}`,
     `- **Browser:** ${env.browser} on ${env.platform}`,

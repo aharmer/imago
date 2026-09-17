@@ -1,8 +1,8 @@
-// imago's on-disk format. Everything lives in a hidden `.imago` folder next to the images:
+// imagoLabel's on-disk format. Everything lives in a hidden `.imagoLabel` folder next to the images:
 //
-//   .imago/project.json                 classes, per-image status index, last image
-//   .imago/annotations/<image>.json     annotations for one image
-//   .imago/lock.json                    who has the folder open
+//   .imagoLabel/project.json                 classes, per-image status index, last image
+//   .imagoLabel/annotations/<image>.json     annotations for one image
+//   .imagoLabel/lock.json                    who has the folder open
 //
 // All coordinates are in original image pixels, origin top-left.
 
@@ -45,7 +45,7 @@ export interface Annotation {
 }
 
 export interface ImageDoc {
-  app: 'imago';
+  app: 'imagoLabel';
   schema: number;
   image: { name: string; width: number; height: number };
   status: ImageStatus;
@@ -60,7 +60,7 @@ export interface ImageSummary {
 }
 
 export interface ProjectFile {
-  app: 'imago';
+  app: 'imagoLabel';
   schema: number;
   classes: ClassDef[];
   /** Status of every image that has been touched; untouched images are 'todo'. */
@@ -79,12 +79,12 @@ export const STATUS_LABEL: Record<ImageStatus, string> = {
 
 export function newProject(): ProjectFile {
   const now = new Date().toISOString();
-  return { app: 'imago', schema: SCHEMA_VERSION, classes: [], images: {}, lastImage: null, createdAt: now, updatedAt: now };
+  return { app: 'imagoLabel', schema: SCHEMA_VERSION, classes: [], images: {}, lastImage: null, createdAt: now, updatedAt: now };
 }
 
 export function newImageDoc(name: string, width: number, height: number): ImageDoc {
   return {
-    app: 'imago',
+    app: 'imagoLabel',
     schema: SCHEMA_VERSION,
     image: { name, width, height },
     status: 'todo',

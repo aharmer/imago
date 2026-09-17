@@ -33,7 +33,7 @@ export function Toolbar() {
   return (
     <header className="toolbar">
       <div className="toolbar-group">
-        <span className="brand small">imago</span>
+        <span className="brand small">imagoLabel</span>
         <span className="folder-name" title={folderName}>
           {folderName}
         </span>

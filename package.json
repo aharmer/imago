@@ -1,5 +1,5 @@
 {
-  "name": "imago",
+  "name": "imago-label",
   "private": true,
   "version": "0.0.0",
   "description": "Free, browser-based image annotation with one-click segmentation, for training deep learning models.",

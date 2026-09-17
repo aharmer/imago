@@ -1,7 +1,10 @@
 import { SCHEMA_VERSION, type ImageDoc, type ProjectFile } from './types';
 
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|bmp|gif)$/i;
-const META_DIR = '.imago';
+const APP_NAME = 'imagoLabel' as const;
+const META_DIR = '.imagoLabel';
+/** Where earlier versions (released as "imago") kept their data. Moved to META_DIR on open. */
+const LEGACY_META_DIRS = ['.imago'];
 const ANNOTATIONS_DIR = 'annotations';
 /** A lock whose heartbeat is older than this is treated as abandoned (browser closed, crash). */
 export const LOCK_STALE_MS = 2 * 60 * 1000;
@@ -67,7 +70,29 @@ async function writeJson(dir: FileSystemDirectoryHandle, name: string, value: un
   await writable.close();
 }
 
-/** Reads and writes imago's files inside one image folder. The `.imago` folder is only created on first save. */
+/** Copies files (not `skip`) from one directory tree to another; returns how many files were copied. */
+async function copyTree(from: FileSystemDirectoryHandle, to: FileSystemDirectoryHandle, skip: string[]): Promise<number> {
+  let copied = 0;
+  for await (const entry of from.values()) {
+    if (entry.kind === 'directory') {
+      copied += await copyTree(entry, await to.getDirectoryHandle(entry.name, { create: true }), skip);
+    } else if (!skip.includes(entry.name)) {
+      const writable = await (await to.getFileHandle(entry.name, { create: true })).createWritable();
+      await writable.write(await entry.getFile());
+      await writable.close();
+      copied++;
+    }
+  }
+  return copied;
+}
+
+async function countFiles(dir: FileSystemDirectoryHandle): Promise<number> {
+  let count = 0;
+  for await (const entry of dir.values()) count += entry.kind === 'directory' ? await countFiles(entry) : 1;
+  return count;
+}
+
+/** Reads and writes imagoLabel's files inside one image folder. The `.imagoLabel` folder is only created on first save. */
 export class FolderStore {
   constructor(readonly root: FileSystemDirectoryHandle) {}
 
@@ -95,6 +120,34 @@ export class FolderStore {
     }
   }
 
+  /**
+   * Moves data saved by earlier versions into the current folder name. The old folder is only
+   * deleted after every file has been copied; a failed copy is rolled back so it can be retried.
+   */
+  async migrateLegacyData(): Promise<boolean> {
+    if (await this.metaDir(false)) return false;
+    for (const legacyName of LEGACY_META_DIRS) {
+      let legacy: FileSystemDirectoryHandle;
+      try {
+        legacy = await this.root.getDirectoryHandle(legacyName);
+      } catch (err) {
+        if (isNotFound(err)) continue;
+        throw err;
+      }
+      const target = (await this.metaDir(true))!;
+      try {
+        const copied = await copyTree(legacy, target, ['lock.json']);
+        if ((await countFiles(target)) !== copied) throw new Error('not every file was copied');
+      } catch (err) {
+        await this.root.removeEntry(META_DIR, { recursive: true }).catch(() => undefined);
+        throw new Error(`Couldn't move annotations from ${legacyName} to ${META_DIR}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await this.root.removeEntry(legacyName, { recursive: true });
+      return true;
+    }
+    return false;
+  }
+
   async listImages(): Promise<ImageEntry[]> {
     const images: ImageEntry[] = [];
     for await (const handle of this.root.values()) {
@@ -107,9 +160,9 @@ export class FolderStore {
     const meta = await this.metaDir(false);
     const project = meta ? await readJson<ProjectFile>(meta, 'project.json') : null;
     if (project && project.schema > SCHEMA_VERSION) {
-      throw new Error('This folder was annotated with a newer version of imago. Reload the page to update.');
+      throw new Error('This folder was annotated with a newer version of imagoLabel. Reload the page to update.');
     }
-    return project;
+    return project && { ...project, app: APP_NAME };
   }
 
   async writeProject(project: ProjectFile) {
@@ -118,7 +171,8 @@ export class FolderStore {
 
   async readImageDoc(imageName: string) {
     const dir = await this.annotationsDir(false);
-    return dir ? readJson<ImageDoc>(dir, `${imageName}.json`) : null;
+    const doc = dir ? await readJson<ImageDoc>(dir, `${imageName}.json`) : null;
+    return doc && { ...doc, app: APP_NAME };
   }
 
   async writeImageDoc(doc: ImageDoc) {
@@ -150,7 +204,7 @@ export interface RecentFolder {
   openedAt: string;
 }
 
-const DB_NAME = 'imago';
+const DB_NAME = 'imagoLabel';
 const STORE = 'recent-folders';
 
 function openDb() {

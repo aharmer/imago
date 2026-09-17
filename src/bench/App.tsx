@@ -25,7 +25,7 @@ const STAGE_TEXT: Record<Stage, string> = {
   decoding: 'Timing clicks',
   'full-res mask': 'Full-res mask',
 };
-const LABEL_KEY = 'imago-bench-label';
+const LABEL_KEY = 'imagoLabel-bench-label';
 
 const createWorker = () => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 
@@ -295,7 +295,7 @@ export function App() {
     const url = URL.createObjectURL(new Blob([toJson(report)], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `imago-benchmark-${(label || 'results').replace(/[^\w-]+/g, '_')}.json`;
+    a.download = `imagoLabel-benchmark-${(label || 'results').replace(/[^\w-]+/g, '_')}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -308,15 +308,15 @@ export function App() {
   return (
     <main>
       <header>
-        <p className="eyebrow">imago · phase 0</p>
+        <p className="eyebrow">imagoLabel · phase 0</p>
         <h1>Segmentation benchmark</h1>
         <p className="lede">
-          Measures how fast one-click segmentation models run in this browser on this computer, so we can pick the default model for imago.
+          Measures how fast one-click segmentation models run in this browser on this computer, so we can pick the default model for imagoLabel.
           Your image never leaves this machine. Models download once from Hugging Face and are cached by the browser.
         </p>
       </header>
 
-      {!isChromium && <p className="warn">imago targets Chrome and Microsoft Edge. Results in other browsers may be missing GPU models or be slower.</p>}
+      {!isChromium && <p className="warn">imagoLabel targets Chrome and Microsoft Edge. Results in other browsers may be missing GPU models or be slower.</p>}
       {env && !env.crossOriginIsolated && <p className="warn">This page isn't cross-origin isolated, so CPU models are limited to a single thread and will look slower than they are.</p>}
 
       <section className="card">
@@ -511,7 +511,7 @@ export function App() {
             </table>
           </div>
           <p className="muted small">
-            <strong>Smooth:</strong> ≤2 s per image and ≤200 ms per click. <strong>Usable:</strong> ≤6 s per image (imago encodes the next images in
+            <strong>Smooth:</strong> ≤2 s per image and ≤200 ms per click. <strong>Usable:</strong> ≤6 s per image (imagoLabel encodes the next images in
             the background) and ≤500 ms per click. Compare mask quality with <em>Mask</em>, or click around with <em>Try it</em>.
           </p>
           <div className="toolbar">

@@ -1,10 +1,10 @@
-# imago
+# imagoLabel
 
 **Free, browser-based image annotation with one-click segmentation, for training deep learning models.**
 
 🌐 **https://imago-label.vercel.app**
 
-imago runs entirely in your browser: open a folder of images, click an object to segment it, assign a class, and export annotations in common training formats (COCO, YOLO, Pascal VOC). Images never leave your computer, and there is nothing to install.
+imagoLabel runs entirely in your browser: open a folder of images, click an object to segment it, assign a class, and export annotations in common training formats (COCO, YOLO, Pascal VOC). Images never leave your computer, and there is nothing to install.
 
 > **Status:** early development. You can open a folder, draw and edit boxes and polygons, manage classes, and your work saves automatically. One-click segmentation (phase 2) and export (phase 3) are next.
 
@@ -18,13 +18,13 @@ imago runs entirely in your browser: open a folder of images, click an object to
 | 3. Export and import | COCO, YOLO (detect and seg), Pascal VOC, CSV; import COCO/YOLO |
 | 4. Polish | Undo/redo, shortcuts, dark mode, offline support, public release |
 
-## Using imago
+## Using imagoLabel
 
 1. Open **https://imago-label.vercel.app** in Chrome, Edge or Brave (Brave needs a one-time setting; the app shows how).
 2. Click **Open image folder…** and choose a folder of JPEG, PNG or WebP images.
 3. Add your classes on the right, then draw.
 
-Annotations save automatically into a hidden `.imago` folder inside the image folder, so you can close the tab and carry on later; imago reopens at the image you were on. If the folder is open somewhere else (another tab, or a colleague on a shared drive), imago warns you before opening it.
+Annotations save automatically into a hidden `.imagoLabel` folder inside the image folder, so you can close the tab and carry on later; imagoLabel reopens at the image you were on. If the folder is open somewhere else (another tab, or a colleague on a shared drive), imagoLabel warns you before opening it.
 
 | Key | Action |
 |---|---|
@@ -38,7 +38,7 @@ Annotations save automatically into a hidden `.imago` folder inside the image fo
 | F | Fit image to window |
 | Alt+click a polygon point | Remove that point |
 
-**Brave users:** Brave turns off the folder access imago relies on. Open `brave://flags/#file-system-access-api`, set it to **Enabled**, and relaunch.
+**Brave users:** Brave turns off the folder access imagoLabel relies on. Open `brave://flags/#file-system-access-api`, set it to **Enabled**, and relaunch.
 
 ## Segmentation benchmark
 
@@ -67,7 +67,7 @@ npm run build        # production build in dist/
 npm run typecheck
 ```
 
-Multi-threaded CPU inference needs the page to be *cross-origin isolated*. The dev server and `vercel.json` both send the required `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers. ONNX Runtime's WebAssembly files are copied into `public/ort/` by `scripts/copy-ort.mjs` and served from imago's own origin rather than a CDN.
+Multi-threaded CPU inference needs the page to be *cross-origin isolated*. The dev server and `vercel.json` both send the required `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers. ONNX Runtime's WebAssembly files are copied into `public/ort/` by `scripts/copy-ort.mjs` and served from imagoLabel's own origin rather than a CDN.
 
 **Tech stack:** Vite, React, TypeScript, Transformers.js / ONNX Runtime Web. Deployed as a static site.
 

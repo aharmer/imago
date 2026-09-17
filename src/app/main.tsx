@@ -5,7 +5,7 @@ import { useStore } from './store';
 import './styles.css';
 
 // Lets automated tests drive the app from the console during development.
-if (import.meta.env.DEV) Object.assign(window, { __imago: useStore });
+if (import.meta.env.DEV) Object.assign(window, { __imagoLabel: useStore });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

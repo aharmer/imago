@@ -59,5 +59,5 @@ export async function makeTestImage(width = 4000, height = 3000): Promise<File> 
   for (let i = 0; i <= 10; i++) ctx.fillRect(width * 0.72 + i * 2 * u, height * 0.88 - (i % 5 ? 1 : 2) * u, 0.3 * u, (i % 5 ? 1 : 2) * u);
 
   const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
-  return new File([blob], `imago-test-${width}x${height}.jpg`, { type: 'image/jpeg' });
+  return new File([blob], `imagoLabel-test-${width}x${height}.jpg`, { type: 'image/jpeg' });
 }

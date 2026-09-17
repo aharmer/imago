@@ -38,7 +38,7 @@ export function StartScreen() {
         result = proceed ? await openFolder(handle, { force: true }) : { ok: true };
       }
       if (!result.ok && result.reason === 'empty') {
-        setMessage(`No images found in “${handle.name}”. imago looks for JPEG, PNG, WebP, BMP and GIF files directly inside the folder you choose.`);
+        setMessage(`No images found in “${handle.name}”. imagoLabel looks for JPEG, PNG, WebP, BMP and GIF files directly inside the folder you choose.`);
       }
     } catch (err) {
       setMessage(`Couldn't open “${handle.name}”: ${err instanceof Error ? err.message : String(err)}`);
@@ -49,7 +49,7 @@ export function StartScreen() {
 
   async function pickFolder() {
     try {
-      const handle = await window.showDirectoryPicker({ id: 'imago', mode: 'readwrite' });
+      const handle = await window.showDirectoryPicker({ id: 'imagoLabel', mode: 'readwrite' });
       await open(handle);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -78,7 +78,7 @@ export function StartScreen() {
   return (
     <main className="start">
       <div className="start-inner">
-        <h1 className="brand">imago</h1>
+        <h1 className="brand">imagoLabel</h1>
         <p className="tagline">Free image annotation with one-click segmentation, for training deep learning models. Your images never leave this computer.</p>
 
         {supported ? (
@@ -86,7 +86,7 @@ export function StartScreen() {
             <button className="primary big" onClick={pickFolder} disabled={busy}>
               Open image folder…
             </button>
-            <p className="muted small">imago saves your annotations in a hidden <code>.imago</code> folder inside the image folder, so you can stop and pick up where you left off.</p>
+            <p className="muted small">imagoLabel saves your annotations in a hidden <code>.imagoLabel</code> folder inside the image folder, so you can stop and pick up where you left off.</p>
 
             {recent.length > 0 && (
               <section className="recent">
@@ -110,7 +110,7 @@ export function StartScreen() {
         ) : brave ? (
           <section className="notice-box">
             <h2>One-time setup for Brave</h2>
-            <p>imago needs to read and save files in your image folder. Brave switches that feature off by default. To turn it on:</p>
+            <p>imagoLabel needs to read and save files in your image folder. Brave switches that feature off by default. To turn it on:</p>
             <ol>
               <li>
                 Copy this address into a new tab: <code className="copyable">brave://flags/#file-system-access-api</code>
@@ -120,19 +120,19 @@ export function StartScreen() {
               </li>
               <li>Click <strong>Relaunch</strong>, then come back to this page.</li>
             </ol>
-            <p className="muted small">This only lets sites use folders you explicitly choose; imago can't see anything else.</p>
+            <p className="muted small">This only lets sites use folders you explicitly choose; imagoLabel can't see anything else.</p>
           </section>
         ) : (
           <section className="notice-box">
             <h2>Please use Chrome or Microsoft Edge</h2>
-            <p>imago saves annotations directly into your image folder, which this browser doesn't support yet.</p>
+            <p>imagoLabel saves annotations directly into your image folder, which this browser doesn't support yet.</p>
           </section>
         )}
 
         {message && <p className="error">{message}</p>}
 
         <footer className="start-footer muted small">
-          <a href="./bench/">Segmentation benchmark</a> · <a href="https://github.com/aharmer/imago">Source on GitHub</a>
+          <a href="./bench/">Segmentation benchmark</a> · <a href="https://github.com/aharmer/imagoLabel">Source on GitHub</a>
         </footer>
       </div>
     </main>

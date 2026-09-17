@@ -1,4 +1,4 @@
-// Copies the ONNX Runtime WebAssembly files into public/ort so imago serves them
+// Copies the ONNX Runtime WebAssembly files into public/ort so imagoLabel serves them
 // itself instead of fetching them from a CDN at runtime (works offline, no third party).
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';

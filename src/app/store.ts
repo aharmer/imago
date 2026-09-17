@@ -83,10 +83,10 @@ interface State {
 /** Identifies this tab. Kept in sessionStorage so reloading the tab doesn't trip its own folder lock. */
 const sessionId = (() => {
   try {
-    const existing = sessionStorage.getItem('imago-session');
+    const existing = sessionStorage.getItem('imagoLabel-session');
     if (existing) return existing;
     const id = newId();
-    sessionStorage.setItem('imago-session', id);
+    sessionStorage.setItem('imagoLabel-session', id);
     return id;
   } catch {
     return newId();
@@ -204,6 +204,7 @@ export const useStore = create<State>()((set, get) => {
       const folder = new FolderStore(handle);
       const images = await folder.listImages();
       if (images.length === 0) return { ok: false, reason: 'empty' };
+      await folder.migrateLegacyData();
 
       const lock = await folder.readLock().catch(() => null);
       const lockIsLive = lock && lock.sessionId !== sessionId && Date.now() - Date.parse(lock.heartbeat) < LOCK_STALE_MS;
