@@ -6,17 +6,39 @@
 
 imago runs entirely in your browser: open a folder of images, click an object to segment it, assign a class, and export annotations in common training formats (COCO, YOLO, Pascal VOC). Images never leave your computer, and there is nothing to install.
 
-> **Status:** early development. The annotation app is not built yet. What exists today is the **segmentation benchmark** (phase 0), used to choose which segmentation model imago ships with.
+> **Status:** early development. You can open a folder, draw and edit boxes and polygons, manage classes, and your work saves automatically. One-click segmentation (phase 2) and export (phase 3) are next.
 
 ## Roadmap
 
 | Phase | Scope |
 |---|---|
-| **0. Model benchmark** ← *now* | Measure candidate SAM models on CPU and GPU across the team's machines |
-| 1. Core | Open a folder, image list, zoom/pan, manual boxes and polygons, classes, autosave, per-image status and resume |
+| 0. Model benchmark ✓ | Measure candidate SAM models on CPU and GPU across the team's machines |
+| **1. Core** ✓ | Open a folder, image list, zoom/pan, manual boxes and polygons, classes, autosave, per-image status and resume |
 | 2. One-click segmentation | SAM in a background worker, include/exclude points, background pre-encoding, segment-the-visible-area when zoomed |
 | 3. Export and import | COCO, YOLO (detect and seg), Pascal VOC, CSV; import COCO/YOLO |
 | 4. Polish | Undo/redo, shortcuts, dark mode, offline support, public release |
+
+## Using imago
+
+1. Open **https://imago-label.vercel.app** in Chrome, Edge or Brave (Brave needs a one-time setting; the app shows how).
+2. Click **Open image folder…** and choose a folder of JPEG, PNG or WebP images.
+3. Add your classes on the right, then draw.
+
+Annotations save automatically into a hidden `.imago` folder inside the image folder, so you can close the tab and carry on later; imago reopens at the image you were on. If the folder is open somewhere else (another tab, or a colleague on a shared drive), imago warns you before opening it.
+
+| Key | Action |
+|---|---|
+| V / B / P | Select, Box, Polygon tool |
+| 1–9 | Use that class (and apply it to the selected shape) |
+| Enter | Mark image done and go to the next (or finish a polygon) |
+| ← / → | Previous / next image |
+| Delete | Delete the selected shape |
+| Ctrl+Z / Ctrl+Shift+Z | Undo / redo |
+| Scroll · Space+drag | Zoom · pan (with Select, drag empty space to pan) |
+| F | Fit image to window |
+| Alt+click a polygon point | Remove that point |
+
+**Brave users:** Brave turns off the folder access imago relies on. Open `brave://flags/#file-system-access-api`, set it to **Enabled**, and relaunch.
 
 ## Segmentation benchmark
 

@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -11,10 +13,16 @@ const crossOriginIsolation = {
 
 export default defineConfig({
   plugins: [react()],
+  // Keep Vite's dependency cache out of the project folder: sync clients (Dropbox, OneDrive) and
+  // antivirus lock files there on Windows, which breaks Vite's cache rebuilds with EBUSY errors.
+  cacheDir: join(tmpdir(), 'imago-vite-cache'),
   server: { headers: crossOriginIsolation },
   preview: { headers: crossOriginIsolation },
   worker: { format: 'es' },
-  optimizeDeps: { exclude: ['@huggingface/transformers'] },
+  optimizeDeps: {
+    include: ['react', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'zustand'],
+    exclude: ['@huggingface/transformers'],
+  },
   build: {
     target: 'es2022',
     rollupOptions: {

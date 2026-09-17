@@ -5,7 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "types": ["vite/client", "@webgpu/types", "node"],
+    "types": ["vite/client", "@webgpu/types", "wicg-file-system-access", "node"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
