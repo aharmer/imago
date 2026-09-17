@@ -36,7 +36,7 @@ function SaveIndicator() {
   return <span className={`save ${saveState.kind}`}>{saveState.kind === 'pending' ? 'Saving…' : 'All changes saved'}</span>;
 }
 
-export function Toolbar() {
+export function Toolbar({ onShowHelp }: { onShowHelp: () => void }) {
   const folderName = useStore((s) => s.folder?.name);
   const tool = useStore((s) => s.tool);
   const images = useStore((s) => s.images);
@@ -106,6 +106,9 @@ export function Toolbar() {
 
       <div className="toolbar-group">
         <SaveIndicator />
+        <button onClick={onShowHelp} title="Keyboard and mouse shortcuts (?)" aria-label="Keyboard and mouse shortcuts">
+          ?
+        </button>
         <button onClick={() => void closeFolder()} title="Save and close this folder">
           Close
         </button>

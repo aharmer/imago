@@ -1,13 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ImageList } from './components/ImageList';
 import { SidePanel } from './components/SidePanel';
 import { StartScreen } from './components/StartScreen';
 import { Toolbar } from './components/Toolbar';
+import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { Viewer } from './components/Viewer';
 import { isTyping } from './keyboard';
+import { useUpdate } from './pwa';
 import { hasUnsavedChanges, useStore } from './store';
 
-function useShortcuts() {
+function useShortcuts(showHelp: () => void) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const s = useStore.getState();
@@ -34,13 +36,14 @@ function useShortcuts() {
       else if (key === 'enter' && s.doc) {
         s.setStatus('done');
         void s.goRelative(1);
-      } else if (key === 'escape') s.select(null);
+      } else if (event.key === '?') showHelp();
+      else if (key === 'escape') s.select(null);
       else return;
       event.preventDefault();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [showHelp]);
 }
 
 function useSaveOnExit() {
@@ -62,20 +65,40 @@ function useSaveOnExit() {
   }, []);
 }
 
+function UpdatePrompt() {
+  const apply = useUpdate((s) => s.apply);
+  if (!apply) return null;
+  return (
+    <div className="update-prompt">
+      A new version of imagoLabel is ready.
+      <button onClick={apply}>Reload</button>
+    </div>
+  );
+}
+
 export function App() {
   const hasFolder = useStore((s) => s.folder !== null);
-  useShortcuts();
+  const [help, setHelp] = useState(false);
+  useShortcuts(() => setHelp(true));
   useSaveOnExit();
 
-  if (!hasFolder) return <StartScreen />;
+  if (!hasFolder)
+    return (
+      <>
+        <StartScreen />
+        <UpdatePrompt />
+      </>
+    );
   return (
     <div className="app">
-      <Toolbar />
+      <Toolbar onShowHelp={() => setHelp(true)} />
       <div className="workspace">
         <ImageList />
         <Viewer />
         <SidePanel />
       </div>
+      {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
+      <UpdatePrompt />
     </div>
   );
 }

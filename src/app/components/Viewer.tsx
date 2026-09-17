@@ -3,7 +3,8 @@ import { isTyping } from '../keyboard';
 import { loadImageByName, useStore, type LoadedImage, type PendingSegment } from '../store';
 import type { Annotation, BoxShape, ClassDef, Shape } from '../project/types';
 import type { Region } from '../segment/protocol';
-import { regionPicture, segmenter, useModelStatus, type ModelStatus } from '../segment/segmenter';
+import { detailer, MAX_DETAIL_PIXELS } from '../image/detail';
+import { ENCODE_SIZE, regionPicture, segmenter, useModelStatus, type ModelStatus } from '../segment/segmenter';
 
 type Point = [number, number];
 interface View {
@@ -49,6 +50,14 @@ const SAME_OBJECT_MARGIN = 0.25;
 
 /** Segment within a cropped region (sharper masks for small objects) once zoomed in past this. */
 const CROP_WHEN_VISIBLE_FRACTION_BELOW = 0.4;
+/** Fetch full-resolution detail once the view is magnifying the display copy by more than this. */
+const DETAIL_ZOOM_FACTOR = 1.2;
+/** Longest side of a detail tile; beyond this the memory cost outweighs what the screen can show. */
+const MAX_DETAIL_TILE = 3000;
+/** Wait for panning and zooming to settle before fetching detail. */
+const DETAIL_DELAY_MS = 250;
+/** Always leave at least this much of the image on screen, so it can't be zoomed or panned away. */
+const KEEP_ON_SCREEN_PX = 60;
 
 /** Is this click on, or close to, the outline we're working on? */
 function nearPolygon([x, y]: Point, polygon: Array<[number, number]>) {
@@ -61,6 +70,17 @@ function nearPolygon([x, y]: Point, polygon: Array<[number, number]>) {
   }
   const margin = Math.max(maxX - minX, maxY - minY) * SAME_OBJECT_MARGIN;
   return x >= minX - margin && x <= maxX + margin && y >= minY - margin && y <= maxY + margin;
+}
+
+/** Keep part of the image within the viewport, whatever the zoom or pan. */
+function keepOnScreen(view: View, image: LoadedImage, el: HTMLElement): View {
+  const width = image.width * view.scale;
+  const height = image.height * view.scale;
+  return {
+    scale: view.scale,
+    x: clamp(view.x, Math.min(KEEP_ON_SCREEN_PX - width, 0), Math.max(el.clientWidth - KEEP_ON_SCREEN_PX, 0)),
+    y: clamp(view.y, Math.min(KEEP_ON_SCREEN_PX - height, 0), Math.max(el.clientHeight - KEEP_ON_SCREEN_PX, 0)),
+  };
 }
 
 function translate(shape: Shape, dx: number, dy: number, w: number, h: number): Shape {
@@ -90,6 +110,8 @@ export function Viewer() {
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 });
   const viewRef = useRef(view);
   viewRef.current = view;
+  const imageRef = useRef(image);
+  imageRef.current = image;
   const dragRef = useRef<Drag | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [draft, setDraft] = useState<Point[]>([]);
@@ -111,6 +133,21 @@ export function Viewer() {
     fitted.current = true;
     setView({ scale, x: (cw - image.width * scale) / 2, y: (ch - image.height * scale) / 2 });
   }, [image]);
+
+  /** Zoom about the middle of the viewport, for the on-screen buttons. */
+  const zoomBy = useCallback((factor: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    fitted.current = false;
+    const mx = el.clientWidth / 2;
+    const my = el.clientHeight / 2;
+    setView((v) => {
+      const scale = clamp(v.scale * factor, 0.01, 40);
+      const k = scale / v.scale;
+      const next = { scale, x: mx - (mx - v.x) * k, y: my - (my - v.y) * k };
+      return imageRef.current ? keepOnScreen(next, imageRef.current, el) : next;
+    });
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -160,7 +197,8 @@ export function Viewer() {
       setView((v) => {
         const scale = clamp(v.scale * Math.exp(-event.deltaY * 0.0015), 0.01, 40);
         const k = scale / v.scale;
-        return { scale, x: mx - (mx - v.x) * k, y: my - (my - v.y) * k };
+        const next = { scale, x: mx - (mx - v.x) * k, y: my - (my - v.y) * k };
+        return imageRef.current ? keepOnScreen(next, imageRef.current, el) : next;
       });
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -201,38 +239,117 @@ export function Viewer() {
     crops.current = [];
   }, [image]);
 
-  /** Pick what to encode for a new object: the whole image, or the zoomed-in view for small objects. */
-  function chooseRegion(img: LoadedImage, x: number, y: number, box?: BoxShape): { key: string; region: Region } {
+  /** The part of the image currently on screen, in image pixels, optionally grown by a margin. */
+  const visibleRegion = useCallback((img: LoadedImage, margin = 0): Region => {
     const el = containerRef.current!;
     const v = viewRef.current;
     const x0 = clamp(-v.x / v.scale, 0, img.width);
     const y0 = clamp(-v.y / v.scale, 0, img.height);
     const x1 = clamp((el.clientWidth - v.x) / v.scale, 0, img.width);
     const y1 = clamp((el.clientHeight - v.y) / v.scale, 0, img.height);
-    const visibleArea = (x1 - x0) * (y1 - y0);
+    const mx = (x1 - x0) * margin;
+    const my = (y1 - y0) * margin;
+    const left = Math.floor(clamp(x0 - mx, 0, img.width));
+    const top = Math.floor(clamp(y0 - my, 0, img.height));
+    return {
+      x: left,
+      y: top,
+      width: Math.max(1, Math.ceil(clamp(x1 + mx, 0, img.width)) - left),
+      height: Math.max(1, Math.ceil(clamp(y1 + my, 0, img.height)) - top),
+    };
+  }, []);
+
+  /** Pick what to encode for a new object: the whole image, or the zoomed-in view for small objects. */
+  function chooseRegion(img: LoadedImage, x: number, y: number, box?: BoxShape): { key: string; region: Region } {
+    const visible = visibleRegion(img);
+    const visibleArea = visible.width * visible.height;
     const full = { key: fullKey(img), region: fullRegion(img) };
-    if (visibleArea >= CROP_WHEN_VISIBLE_FRACTION_BELOW * img.width * img.height || x1 - x0 < 16 || y1 - y0 < 16) return full;
+    if (visibleArea >= CROP_WHEN_VISIBLE_FRACTION_BELOW * img.width * img.height || visible.width < 16 || visible.height < 16) return full;
 
     const fits = (r: Region) => contains(r, x, y) && (!box || contains(r, box.x, box.y, box.width, box.height));
     const reusable = crops.current.find(({ region: r }) => fits(r) && r.width * r.height <= 2.5 * visibleArea);
     if (reusable) return reusable;
 
     // A margin around the visible area gives the model context at the edges of the view.
-    const mx = (x1 - x0) * 0.1;
-    const my = (y1 - y0) * 0.1;
-    const left = Math.floor(clamp(x0 - mx, 0, img.width));
-    const top = Math.floor(clamp(y0 - my, 0, img.height));
-    const region = {
-      x: left,
-      y: top,
-      width: Math.ceil(clamp(x1 + mx, 0, img.width)) - left,
-      height: Math.ceil(clamp(y1 + my, 0, img.height)) - top,
-    };
+    const region = visibleRegion(img, 0.1);
     if (!fits(region)) return full;
     const crop = { key: `${img.name}#${region.x},${region.y},${region.width},${region.height}`, region };
     crops.current = [crop, ...crops.current].slice(0, 6);
     return crop;
   }
+
+  const fileFor = useCallback(async (name: string) => {
+    const entry = useStore.getState().images.find((i) => i.name === name);
+    if (!entry) throw new Error(`${name} is no longer in this folder`);
+    return entry.handle.getFile();
+  }, []);
+
+  /** Can we do better than the display copy for this image? */
+  const canUseDetail = (img: LoadedImage) => img.bitmap.width < img.width && img.width * img.height <= MAX_DETAIL_PIXELS;
+
+  /** The picture handed to the model: cut from the original file when that is sharper than the display copy. */
+  const segmentPicture = useCallback(
+    async (img: LoadedImage, region: Region) => {
+      const isCrop = region.width < img.width || region.height < img.height;
+      if (isCrop && canUseDetail(img)) {
+        try {
+          return await detailer.crop(img.name, await fileFor(img.name), region, ENCODE_SIZE, true);
+        } catch {
+          // Fall back to the display copy.
+        }
+      }
+      return regionPicture(img.bitmap, img.width, region);
+    },
+    [fileFor],
+  );
+
+  // --- Full-resolution detail while zoomed in ---------------------------------------------------
+
+  const [tile, setTile] = useState<{ name: string; region: Region; bitmap: ImageBitmap } | null>(null);
+  const tileRef = useRef<typeof tile>(null);
+  const tileSeq = useRef(0);
+  const tileCanvasRef = useRef<HTMLCanvasElement>(null);
+  const showTile = useCallback((next: typeof tile) => {
+    tileRef.current?.bitmap.close();
+    tileRef.current = next;
+    setTile(next);
+  }, []);
+
+  useEffect(() => {
+    if (!image) return;
+    tileSeq.current++;
+    if (tileRef.current && tileRef.current.name !== image.name) showTile(null);
+    const displayScale = image.bitmap.width / image.width;
+    // The display copy already has every pixel the screen can show.
+    if (!canUseDetail(image) || view.scale <= displayScale * DETAIL_ZOOM_FACTOR) {
+      if (tileRef.current) showTile(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const seq = ++tileSeq.current;
+      const region = visibleRegion(image, 0.15);
+      if (region.width < 8 || region.height < 8) return;
+      try {
+        const maxSize = Math.min(MAX_DETAIL_TILE, Math.ceil(Math.max(region.width, region.height) * view.scale * devicePixelRatio));
+        const bitmap = await detailer.crop(image.name, await fileFor(image.name), region, maxSize, false);
+        if (seq !== tileSeq.current) bitmap.close();
+        else showTile({ name: image.name, region, bitmap });
+      } catch {
+        // Keep showing the display copy.
+      }
+    }, DETAIL_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [image, view, visibleRegion, fileFor, showTile]);
+
+  useEffect(() => {
+    const canvas = tileCanvasRef.current;
+    if (!canvas || !tile) return;
+    canvas.width = tile.bitmap.width;
+    canvas.height = tile.bitmap.height;
+    canvas.getContext('2d')!.drawImage(tile.bitmap, 0, 0);
+  }, [tile]);
+
+  useEffect(() => () => showTile(null), [showTile]);
 
   const segmentSeq = useRef(0);
   async function runSegment(next: PendingSegment) {
@@ -242,7 +359,7 @@ export function Viewer() {
     store().setPendingSegment({ ...next, busy: true, error: null });
     try {
       const box = next.box && { x: next.box.x, y: next.box.y, width: next.box.width, height: next.box.height };
-      const result = await segmenter.segment(next.key, next.region, () => regionPicture(img.bitmap, img.width, next.region), next.points, box);
+      const result = await segmenter.segment(next.key, next.region, () => segmentPicture(img, next.region), next.points, box);
       if (seq !== segmentSeq.current || store().pendingSegment?.key !== next.key) return;
       store().setPendingSegment({
         ...next,
@@ -373,7 +490,8 @@ export function Viewer() {
     if (!d) return;
     if (d.kind === 'pan') {
       fitted.current = false;
-      setView({ ...d.origin, x: d.origin.x + event.clientX - d.startX, y: d.origin.y + event.clientY - d.startY });
+      const panned = { ...d.origin, x: d.origin.x + event.clientX - d.startX, y: d.origin.y + event.clientY - d.startY };
+      setView(keepOnScreen(panned, image, event.currentTarget));
     } else if (d.kind === 'box' || d.kind === 'segment') {
       updateDrag({ ...d, current: clampToImage(p) });
     } else if (d.kind === 'move') {
@@ -461,6 +579,13 @@ export function Viewer() {
       {image && (
         <div className="world" style={{ width: image.width, height: image.height, transform: `matrix(${s},0,0,${s},${view.x},${view.y})` }}>
           <canvas ref={canvasRef} className="world-image" />
+          {tile && tile.name === image.name && (
+            <canvas
+              ref={tileCanvasRef}
+              className="world-detail"
+              style={{ left: tile.region.x, top: tile.region.y, width: tile.region.width, height: tile.region.height }}
+            />
+          )}
           <svg className="world-overlay" width={image.width} height={image.height} viewBox={`0 0 ${image.width} ${image.height}`}>
             {doc?.annotations.map((a) => {
               const cls = a.classId ? classById.get(a.classId) : undefined;
@@ -565,8 +690,21 @@ export function Viewer() {
         </div>
       )}
       {image && (
+        <div className="zoom-controls">
+          <button onClick={() => zoomBy(1 / 1.4)} title="Zoom out" aria-label="Zoom out">
+            −
+          </button>
+          <button onClick={fit} title="Fit the image to the window (F)">
+            {Math.round(s * 100)}%
+          </button>
+          <button onClick={() => zoomBy(1.4)} title="Zoom in" aria-label="Zoom in">
+            +
+          </button>
+        </div>
+      )}
+      {image && (
         <div className="viewer-hud">
-          {Math.round(s * 100)}% · {image.width}×{image.height}
+          {image.width}×{image.height}
           {tool === 'polygon' && (draft.length === 0 ? ' · Click to add points' : ' · Click the first point, double-click or press Enter to finish')}
           {tool === 'segment' && ` · ${segmentHint(modelStatus, pending)}`}
         </div>

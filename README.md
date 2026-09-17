@@ -6,7 +6,7 @@
 
 imagoLabel runs entirely in your browser: open a folder of images, click an object to segment it, assign a class, and export annotations in common training formats (COCO, YOLO, Pascal VOC). Images never leave your computer, and there is nothing to install.
 
-> **Status:** usable. Open a folder, click objects to outline them automatically (or draw boxes and polygons by hand), and export for training. Polish (phase 4) is next.
+> **Status:** ready to use. Open a folder, click objects to outline them automatically (or draw boxes and polygons by hand), and export for training.
 
 ## Roadmap
 
@@ -16,7 +16,7 @@ imagoLabel runs entirely in your browser: open a folder of images, click an obje
 | 1. Core ✓ | Open a folder, image list, zoom/pan, manual boxes and polygons, classes, autosave, per-image status and resume |
 | 2. One-click segmentation ✓ | SAM in a background worker, include/exclude points, background pre-encoding, segment-the-visible-area when zoomed |
 | **3. Export and import** ✓ | COCO, YOLO (detect and seg), Pascal VOC, CSV; import COCO/YOLO |
-| 4. Polish | Undo/redo, shortcuts, dark mode, offline support, public release |
+| **4. Polish** ✓ | Undo/redo, shortcuts, dark mode, offline support, public release |
 
 ## Using imagoLabel
 
@@ -29,6 +29,7 @@ Annotations save automatically into a hidden `.imagoLabel` folder inside the ima
 | Key | Action |
 |---|---|
 | S / V / B / P | Segment, Select, Box, Polygon tool |
+| ? | Show every shortcut |
 | 1–9 | Use that class (and apply it to the selected shape) |
 | Enter | Mark image done and go to the next (or finish a polygon) |
 | ← / → | Previous / next image |
@@ -41,6 +42,10 @@ Annotations save automatically into a hidden `.imagoLabel` folder inside the ima
 **Segmenting:** click an object and imagoLabel outlines it; drag a box instead for thin or awkward objects. To fix an outline, **click a part it missed** (a leg, an antenna) to add it, or **right-click** an area to remove it; **Backspace** undoes your last click. Clicking well away from the outline keeps it and starts the next object, so most objects are a single click. **Enter** keeps the outline without starting another, and **Esc** discards it. Zoom in on small objects before clicking: imagoLabel then segments just the visible area, which gives much sharper outlines.
 
 Segmentation uses [SAM 2.1 small](https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX), running on your graphics card when it can and on the CPU otherwise. Upcoming images are prepared in the background so clicks are near-instant.
+
+**Large images.** Images are displayed from a copy no larger than 4096 px, so they open quickly. Zoom in past that and imagoLabel fetches the visible part at full resolution from the original file, and hands the model the same full-resolution crop, so outlines on small details are as sharp as the photo allows.
+
+**Working offline.** After the first visit the app keeps itself in the browser's cache, and the segmentation model is cached too, so imagoLabel keeps working with no network — handy in a collection room or on a laptop away from the desk. It can also be installed as a desktop app from the browser's address bar. When a new version is published, a prompt appears offering to reload.
 
 **Brave users:** Brave turns off the folder access imagoLabel relies on. Open `brave://flags/#file-system-access-api`, set it to **Enabled**, and relaunch.
 
