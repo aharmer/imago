@@ -3,7 +3,7 @@ import { useStore, type Tool } from '../store';
 import { STATUS_LABEL } from '../project/types';
 
 const TOOLS: Array<{ tool: Tool; label: string; key: string; title: string }> = [
-  { tool: 'segment', label: 'Segment', key: 'S', title: 'Click an object to outline it automatically, or drag a box around it' },
+  { tool: 'segment', label: 'Segment', key: 'S', title: 'Click an object to outline it automatically, or drag a box around it. Click the outline to add an area, right-click to remove one' },
   { tool: 'select', label: 'Select', key: 'V', title: 'Select, move and edit shapes; drag empty space to pan' },
   { tool: 'box', label: 'Box', key: 'B', title: 'Drag to draw a box' },
   { tool: 'polygon', label: 'Polygon', key: 'P', title: 'Click to add points; Enter or click the first point to finish' },

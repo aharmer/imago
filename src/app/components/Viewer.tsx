@@ -41,8 +41,27 @@ const fullRegion = (image: LoadedImage): Region => ({ x: 0, y: 0, width: image.w
 const fullKey = (image: LoadedImage) => `${image.name}#full`;
 const contains = (r: Region, x: number, y: number, w = 0, h = 0) => x >= r.x && y >= r.y && x + w <= r.x + r.width && y + h <= r.y + r.height;
 
+/**
+ * How far outside the current outline a click still counts as part of the same object, as a
+ * fraction of the outline's longest side. Clicks beyond this start a new object instead.
+ */
+const SAME_OBJECT_MARGIN = 0.25;
+
 /** Segment within a cropped region (sharper masks for small objects) once zoomed in past this. */
 const CROP_WHEN_VISIBLE_FRACTION_BELOW = 0.4;
+
+/** Is this click on, or close to, the outline we're working on? */
+function nearPolygon([x, y]: Point, polygon: Array<[number, number]>) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [px, py] of polygon) {
+    if (px < minX) minX = px;
+    if (py < minY) minY = py;
+    if (px > maxX) maxX = px;
+    if (py > maxY) maxY = py;
+  }
+  const margin = Math.max(maxX - minX, maxY - minY) * SAME_OBJECT_MARGIN;
+  return x >= minX - margin && x <= maxX + margin && y >= minY - margin && y <= maxY + margin;
+}
 
 function translate(shape: Shape, dx: number, dy: number, w: number, h: number): Shape {
   if (shape.type === 'box') {
@@ -244,13 +263,17 @@ export function Viewer() {
     if (!image) return;
     const current = store().pendingSegment;
     const point = { x: round(p[0]), y: round(p[1]), positive: !exclude };
-    // Ctrl-click adds to the current object; Shift/right-click removes an area from it.
-    if (current && (add || exclude)) {
+    // Clicking a spot that's already a prompt (e.g. a double-click) would just repeat the same request.
+    const samePoint = current?.points.some((q) => Math.hypot(q.x - point.x, q.y - point.y) * viewRef.current.scale < 4);
+    if (current && samePoint) return;
+    // Right-click removes an area from the outline we're working on; Ctrl-click always adds to it.
+    // A plain click adds to it too when it lands on or near it, and otherwise starts a new object.
+    const refine = current && (exclude || add || (current.polygon !== null && nearPolygon(p, current.polygon)));
+    if (refine) {
       void runSegment({ ...current, points: [...current.points, point] });
       return;
     }
     if (exclude) return;
-    // A plain click keeps the previous object and starts a new one.
     store().commitPendingSegment();
     const { key, region } = chooseRegion(image, p[0], p[1]);
     void runSegment({ key, region, points: [point], box: null, polygon: null, busy: true, error: null });
@@ -561,5 +584,5 @@ function segmentHint(status: ModelStatus, pending: PendingSegment | null) {
   if (!pending) return 'Click an object to segment it, or drag a box around it';
   if (pending.busy) return 'Segmenting…';
   if (pending.error) return pending.error;
-  return 'Enter to keep · Ctrl+click to add · Shift+click to remove · Esc to discard';
+  return 'Click this outline to add · right-click to remove · click elsewhere for the next object · Esc to discard';
 }

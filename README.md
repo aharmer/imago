@@ -38,7 +38,7 @@ Annotations save automatically into a hidden `.imagoLabel` folder inside the ima
 | F | Fit image to window |
 | Alt+click a polygon point | Remove that point |
 
-**Segmenting:** click an object and imagoLabel outlines it; drag a box instead for thin or awkward objects. Refine the outline before keeping it: **Ctrl+click** adds an area, **Shift+click** (or right-click) removes one, **Backspace** undoes the last click. Press **Enter** to keep it, or just click the next object (the current one is kept). **Esc** discards it. Zoom in on small objects before clicking: imagoLabel then segments just the visible area, which gives much sharper outlines.
+**Segmenting:** click an object and imagoLabel outlines it; drag a box instead for thin or awkward objects. To fix an outline, **click a part it missed** (a leg, an antenna) to add it, or **right-click** an area to remove it; **Backspace** undoes your last click. Clicking well away from the outline keeps it and starts the next object, so most objects are a single click. **Enter** keeps the outline without starting another, and **Esc** discards it. Zoom in on small objects before clicking: imagoLabel then segments just the visible area, which gives much sharper outlines.
 
 Segmentation uses [SAM 2.1 small](https://huggingface.co/onnx-community/sam2.1-hiera-small-ONNX), running on your graphics card when it can and on the CPU otherwise. Upcoming images are prepared in the background so clicks are near-instant.
 
