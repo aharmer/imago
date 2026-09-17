@@ -46,7 +46,7 @@ Segmentation uses [SAM 2.1 small](https://huggingface.co/onnx-community/sam2.1-h
 
 ## Exporting for training
 
-**Export…** in the right-hand panel writes a dataset into a folder you choose:
+**Export…** in the right-hand panel creates a named dataset folder inside a folder you choose, so exports sit side by side instead of mixing together:
 
 | Format | What you get |
 |---|---|
@@ -69,7 +69,7 @@ For YOLO the generated `data.yaml` deliberately omits `path`, so Ultralytics res
 yolo detect train data=data.yaml model=yolo11n.pt epochs=100 imgsz=640
 ```
 
-Classification datasets are folders rather than a YAML, so train them from the export folder:
+Classification datasets have no data.yaml at all: Ultralytics takes the class names from the folder names. Train them from the export folder:
 
 ```bash
 yolo classify train data=. model=yolo11n-cls.pt epochs=100 imgsz=224

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { planExport, runExport, type ExportOptions, type ExportPlan, type ExportSummary } from '../export/exporter';
-import { FORMAT_LABEL, FORMAT_NOTE, type Format } from '../export/formats';
+import { FORMAT_LABEL, FORMAT_NOTE, safeFolderName, suggestedFolderName, type Format } from '../export/formats';
 import { useStore } from '../store';
 import { Modal } from './Modal';
 
@@ -16,6 +16,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     include: 'annotated',
     classifySource: 'crops',
   });
+  const imageFolder = useStore((s) => s.folder?.name ?? 'dataset');
+  const [folderName, setFolderName] = useState(() => suggestedFolderName(imageFolder, 'yolo-detect'));
+  const [renamed, setRenamed] = useState(false);
   const [plan, setPlan] = useState<ExportPlan | null>(null);
   const [phase, setPhase] = useState<'options' | 'running' | 'done'>('options');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -45,22 +48,34 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   async function start() {
     if (!plan) return;
     setError(null);
-    let target: FileSystemDirectoryHandle;
+    const name = safeFolderName(folderName);
+    let parent: FileSystemDirectoryHandle;
     try {
-      target = await window.showDirectoryPicker({ id: 'imagoLabel-export', mode: 'readwrite' });
+      parent = await window.showDirectoryPicker({ id: 'imagoLabel-export', mode: 'readwrite' });
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) setError(err instanceof Error ? err.message : String(err));
       return;
     }
-    for await (const _entry of target.values()) {
-      if (!window.confirm(`“${target.name}” already contains files. Files with the same names will be replaced. Continue?`)) return;
-      break;
+    let target: FileSystemDirectoryHandle;
+    try {
+      // Warn before writing into a dataset folder that already holds something.
+      const existing = await parent.getDirectoryHandle(name).catch(() => null);
+      if (existing) {
+        for await (const _entry of existing.values()) {
+          if (!window.confirm(`“${name}” already exists in “${parent.name}” and contains files. Files with the same names will be replaced. Continue?`)) return;
+          break;
+        }
+      }
+      target = existing ?? (await parent.getDirectoryHandle(name, { create: true }));
+    } catch (err) {
+      setError(`Couldn't create “${name}” in “${parent.name}”: ${err instanceof Error ? err.message : String(err)}`);
+      return;
     }
     setPhase('running');
     try {
       const { folder, images } = useStore.getState();
       const result = await runExport(target, folder!, images, plan, options, (done, total) => setProgress({ done, total }));
-      setSummary({ ...result, folder: target.name });
+      setSummary({ ...result, folder: `${parent.name}/${target.name}` });
       setPhase('done');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -68,7 +83,10 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const set = (patch: Partial<ExportOptions>) => setOptions((o) => ({ ...o, ...patch }));
+  const set = (patch: Partial<ExportOptions>) => {
+    setOptions((o) => ({ ...o, ...patch }));
+    if (patch.format && !renamed) setFolderName(suggestedFolderName(imageFolder, patch.format));
+  };
   /** Move one slider, pushing the other down if together they'd leave too little for training. */
   const setSplit = (which: 'val' | 'test', value: number) =>
     setOptions((o) => {
@@ -187,6 +205,18 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             </div>
 
             <label className="field-row">
+              Dataset folder name
+              <input
+                value={folderName}
+                onChange={(e) => {
+                  setFolderName(e.target.value);
+                  setRenamed(true);
+                }}
+                aria-label="Dataset folder name"
+              />
+            </label>
+
+            <label className="field-row">
               Images to include
               <select value={options.include} onChange={(e) => set({ include: e.target.value as ExportOptions['include'] })}>
                 <option value="annotated">Every annotated image</option>
@@ -194,6 +224,10 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
               </select>
             </label>
           </fieldset>
+
+          <p className="muted small">
+            A folder named <strong>{safeFolderName(folderName)}</strong> will be created inside the folder you choose next.
+          </p>
 
           <p className="summary">
             {plan ? (
@@ -218,8 +252,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             <button onClick={onClose} disabled={phase === 'running'}>
               Cancel
             </button>
-            <button className="primary" onClick={start} disabled={!plan || plan.docs.length === 0 || phase === 'running'}>
-              Choose folder and export…
+            <button className="primary" onClick={start} disabled={!plan || plan.docs.length === 0 || phase === 'running' || !safeFolderName(folderName)}>
+              Choose where to save…
             </button>
           </div>
         </>

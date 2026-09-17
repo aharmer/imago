@@ -1,7 +1,7 @@
 import type { FolderStore, ImageEntry } from '../project/folder';
 import { shapeBounds, type BoxShape, type ClassDef, type ImageDoc, type ProjectFile } from '../project/types';
 import {
-  classFolder,
+  safeFolderName,
   cocoJson,
   csvRows,
   dataYaml,
@@ -182,7 +182,7 @@ export async function runExport(
         if (options.classifySource === 'images') {
           const used = new Set(annotations.map((a) => a.classId));
           if (used.size === 1) {
-            const dir = await subdir(target, split, classFolder(classes[classIndex.get(annotations[0].classId!)!].name));
+            const dir = await subdir(target, split, safeFolderName(classes[classIndex.get(annotations[0].classId!)!].name));
             await writeBlob(dir, file.name, file);
             filesWritten++;
           } else {
@@ -192,7 +192,7 @@ export async function runExport(
           // One cropped image per annotation, so several classes in one photo all get used.
           const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
           for (const [index, annotation] of annotations.entries()) {
-            const dir = await subdir(target, split, classFolder(classes[classIndex.get(annotation.classId!)!].name));
+            const dir = await subdir(target, split, safeFolderName(classes[classIndex.get(annotation.classId!)!].name));
             await writeBlob(dir, `${baseName(doc.image.name)}_${index + 1}.jpg`, await cropJpeg(bitmap, shapeBounds(annotation.shape)));
             filesWritten++;
           }
@@ -247,10 +247,6 @@ export async function runExport(
     filesWritten++;
   }
 
-  if (options.format === 'yolo-classify') {
-    await writeText(target, 'data.yaml', dataYaml(classes, present, true));
-    filesWritten++;
-  }
   await writeText(target, 'README.txt', readme(options.format, options.includeImages || options.format === 'yolo-classify'));
   filesWritten++;
   return { images: docs.length, annotations: plan.annotations, filesWritten, rotated, mixedClass, counts };

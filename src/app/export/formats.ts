@@ -67,10 +67,10 @@ export function yoloLabel(doc: ImageDoc, classIndex: Map<string, number>, format
 }
 
 /** Ultralytics resolves relative train/val paths against the folder holding data.yaml when `path` is omitted. */
-export function dataYaml(classes: ClassDef[], present: Set<Split>, classify = false) {
+/** Only detection and segmentation use a data.yaml; classification takes its classes from folder names. */
+export function dataYaml(classes: ClassDef[], present: Set<Split>) {
   const names = classes.map((c, i) => `  ${i}: ${JSON.stringify(c.name)}`).join('\n');
-  // Classification datasets are folders of images per class; detection keeps images in images/<split>.
-  const dir = (split: Split) => (classify ? split : `images/${split}`);
+  const dir = (split: Split) => `images/${split}`;
   const lines = [
     '# Dataset exported by imagoLabel (https://imago-label.vercel.app)',
     `# Created ${new Date().toISOString()}`,
@@ -97,7 +97,8 @@ export function readme(format: Format, hasImages: boolean) {
       '',
       '  yolo classify train data=. model=yolo11n-cls.pt epochs=100 imgsz=224',
       '',
-      'Each split folder holds one sub-folder per class, and Ultralytics takes the class from the folder name.',
+      'Each split folder holds one sub-folder per class. Ultralytics takes the class names from the',
+      'folder names, so this layout needs no data.yaml.',
     );
   } else if (format.startsWith('yolo')) {
     lines.push(
@@ -245,5 +246,17 @@ export function splitFor(name: string, sizes: SplitSizes): Split {
   return 'train';
 }
 
-/** A file name safe to use as a folder name for a class. */
-export const classFolder = (name: string) => name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || 'unnamed';
+/** Turn a class or dataset name into something safe to use as a folder name. */
+export const safeFolderName = (name: string) => name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || 'unnamed';
+
+const FORMAT_SUFFIX: Record<Format, string> = {
+  'yolo-detect': 'yolo',
+  'yolo-segment': 'yolo-seg',
+  'yolo-classify': 'yolo-cls',
+  coco: 'coco',
+  voc: 'voc',
+  csv: 'csv',
+};
+
+/** Suggested name for the dataset folder, e.g. "beetles-yolo". */
+export const suggestedFolderName = (imageFolder: string, format: Format) => safeFolderName(`${imageFolder}-${FORMAT_SUFFIX[format]}`);
