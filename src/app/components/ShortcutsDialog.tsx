@@ -29,6 +29,7 @@ const GROUPS: Array<{ title: string; rows: Array<[string, string]> }> = [
       ['Drag a handle', 'Resize a box or move a polygon point'],
       ['Alt+click a point', 'Remove that polygon point'],
       ['1 – 9', 'Use that class, and apply it to the selected shape'],
+      ['Double-click a class', 'Rename it (or use its pencil button)'],
       ['Delete', 'Delete the selected shape'],
       ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo'],
     ],

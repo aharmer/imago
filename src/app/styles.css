@@ -306,3 +306,6 @@ h1.brand { font-size: 3rem; }
 .brand-mark { display: block; width: 88px; height: 88px; border-radius: 20px; margin-bottom: 0.75rem; }
 
 .toolbar-mark { width: 22px; height: 22px; border-radius: 5px; flex: none; }
+
+.icon.rename { font-size: 0.9rem; }
+.icon.rename:hover { color: var(--accent); }

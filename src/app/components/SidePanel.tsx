@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { ExportDialog } from './ExportDialog';
 import { ImportDialog } from './ImportDialog';
@@ -8,6 +8,13 @@ function ClassRow({ cls, index, count }: { cls: ClassDef; index: number; count: 
   const activeClassId = useStore((s) => s.activeClassId);
   const selectedId = useStore((s) => s.selectedId);
   const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Select the old name when editing starts, so a correction can just be typed over it.
+  useEffect(() => {
+    if (!editing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editing]);
   const [name, setName] = useState(cls.name);
   const { setActiveClass, setAnnotationClass, updateClass, deleteClass } = useStore.getState();
 
@@ -42,7 +49,7 @@ function ClassRow({ cls, index, count }: { cls: ClassDef; index: number; count: 
       {editing ? (
         <input
           className="class-name-input"
-          autoFocus
+          ref={inputRef}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={commitName}
@@ -63,6 +70,11 @@ function ClassRow({ cls, index, count }: { cls: ClassDef; index: number; count: 
         <span className="count" title={`${count} on this image`}>
           {count}
         </span>
+      )}
+      {!editing && (
+        <button className="icon rename" onClick={() => setEditing(true)} title="Rename class" aria-label={`Rename class ${cls.name}`}>
+          ✎
+        </button>
       )}
       <button className="icon" onClick={remove} title="Delete class" aria-label={`Delete class ${cls.name}`}>
         ×
