@@ -50,6 +50,7 @@ export function Toolbar({ onShowHelp }: { onShowHelp: () => void }) {
   return (
     <header className="toolbar">
       <div className="toolbar-group">
+        <img className="toolbar-mark" src="/icons/icon-512.png" width={22} height={22} alt="" />
         <span className="brand small">imagoLabel</span>
         <span className="folder-name" title={folderName}>
           {folderName}
@@ -106,8 +107,8 @@ export function Toolbar({ onShowHelp }: { onShowHelp: () => void }) {
 
       <div className="toolbar-group">
         <SaveIndicator />
-        <button onClick={onShowHelp} title="Keyboard and mouse shortcuts">
-          Shortcuts <kbd>?</kbd>
+        <button onClick={onShowHelp} title="Keyboard and mouse shortcuts (?)">
+          Shortcuts
         </button>
         <button onClick={() => void closeFolder()} title="Save and close this folder">
           Close
