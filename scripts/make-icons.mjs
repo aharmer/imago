@@ -7,11 +7,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const INK = [16, 18, 23];
-const WING = [37, 99, 235];
-const WING_LIGHT = [91, 140, 255];
-const BODY = [226, 232, 240];
-const MARK = [255, 176, 0];
+const INK = [255, 255, 255];
+const WING = [28, 114, 135];
+const WING_LIGHT = [43, 138, 154];
+const BODY = [22, 92, 108];
+const MARK = [228, 85, 39];
 
 /** Everything is drawn at this multiple and averaged down, which gives smooth edges. */
 const SUPERSAMPLE = 4;
@@ -234,17 +234,17 @@ function icon(size, inset, plate = true) {
     c.polygon(wingOutline(Math.PI - w.angle, w.length, w.width), w.colour);
     const traced = wingOutline(w.angle, w.length, w.width);
     c.curve([...traced, traced[0]], 3.4 * u, w.colour);
-    for (let i = 0; i < 6; i++) {
-      const [px, py] = traced[Math.round((i / 6) * traced.length) % traced.length];
-      c.square(px, py, 2.9 * u, BODY);
+    for (let i = 0; i < 5; i++) {
+      const [px, py] = traced[Math.round((i / 5) * traced.length) % traced.length];
+      c.square(px, py, 2.9 * u, MARK);
     }
   }
 
   // Body, head and antennae.
-  c.ellipse(cx, cy + 2 * u, 5.5 * u, 21 * u, 0, BODY);
-  c.ellipse(cx, pad + 26 * u, 6.5 * u, 6 * u, 0, BODY);
+  c.ellipse(cx, cy + 0.1 * u, 7 * u, 21 * u, 0, BODY);
+  c.ellipse(cx, pad + 30 * u, 6.5 * u, 6 * u, 0, BODY);
   for (const side of [-1, 1]) {
-    const tip = at(side * 15, -36);
+    const tip = at(side * 11, -36);
     c.curve(
       [
         at(side * 3, -25),
@@ -254,7 +254,7 @@ function icon(size, inset, plate = true) {
       2.4 * u,
       BODY,
     );
-    c.ellipse(tip[0], tip[1], 2.6 * u, 2.6 * u, 0, MARK);
+    c.ellipse(tip[0], tip[1], 2.6 * u, 2.6 * u, 0, BODY);
   }
 
   // The selection box around it, with corner handles.
